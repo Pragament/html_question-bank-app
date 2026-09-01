@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsAuthorField() {
+      return signedIn() && request.resource.data.authorUid == request.auth.uid;
+    }
+
+    match /qb_questions_v1/{questionId} {
+      allow read: if resource.data.status == 'published'
+        || (signedIn() && resource.data.authorUid == request.auth.uid);
+
+      allow create: if ownsAuthorField();
+
+      allow update: if signedIn()
+        && resource.data.authorUid == request.auth.uid
+        && request.resource.data.authorUid == resource.data.authorUid;
+
+      allow delete: if false;
+    }
+
+    match /qb_reactions_v1/{reactionId} {
+      allow read: if true;
+
+      allow create, update: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && reactionId == request.resource.data.questionId + '_' + request.auth.uid;
+
+      allow delete: if signedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+    match /qb_lists_v1/{listId} {
+      allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
+
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+
+      allow delete: if signedIn()
+        && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}

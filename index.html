@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Question Bank Studio</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div>
+            <h1>Question Bank Studio</h1>
+            <p id="syncStatus">Connecting to Firestore...</p>
+        </div>
+        <div class="header-actions">
+            <button class="btn" id="templatesBtn">Templates</button>
+            <button class="btn" id="importBtn">Import</button>
+            <button class="btn" id="exportBtn">Export CSV</button>
+            <button class="btn primary" id="newQuestionBtn">New Question</button>
+            <button class="btn" id="loginBtn">Google Login</button>
+            <button class="btn" id="logoutBtn" hidden>Logout</button>
+        </div>
+    </header>
+
+    <main class="app-layout">
+        <aside class="filters-panel">
+            <div class="panel-head">
+                <h2>Filters</h2>
+                <button class="icon-btn" id="clearFiltersBtn" title="Clear filters">Clear</button>
+            </div>
+            <label class="field">
+                <span>Search</span>
+                <input id="searchInput" type="search" placeholder="Question, answer, author" />
+            </label>
+            <label class="field">
+                <span>Class</span>
+                <input id="classFilter" list="classList" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>Subject</span>
+                <input id="subjectFilter" list="subjectList" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>Chapter</span>
+                <input id="chapterFilter" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>Topic</span>
+                <input id="topicFilter" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>Difficulty</span>
+                <select id="difficultyFilter">
+                    <option value="">Any</option>
+                    <option>Easy</option>
+                    <option>Medium</option>
+                    <option>Hard</option>
+                    <option>Very Hard</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Question Type</span>
+                <select id="typeFilter">
+                    <option value="">Any</option>
+                    <option value="mcq">MCQ</option>
+                    <option value="true_false">True/False</option>
+                    <option value="fib">Fill in the Blank</option>
+                    <option value="short_answer">Short Answer</option>
+                </select>
+            </label>
+            <label class="field">
+                <span>Visibility</span>
+                <select id="visibilityFilter">
+                    <option value="published">Published</option>
+                    <option value="mine">My Questions</option>
+                    <option value="all">Published + Mine</option>
+                </select>
+            </label>
+        </aside>
+
+        <section class="content-panel">
+            <div class="content-toolbar">
+                <div>
+                    <strong id="questionCount">0 questions</strong>
+                    <span id="activeUserLabel"></span>
+                </div>
+                <div class="view-tabs" role="tablist">
+                    <button class="tab active" data-view="bank">Bank</button>
+                    <button class="tab" data-view="lists">Lists</button>
+                </div>
+            </div>
+
+            <section id="bankView">
+                <div class="question-grid" id="questionGrid"></div>
+            </section>
+
+            <section id="listsView" hidden>
+                <div class="list-manager">
+                    <div class="list-create-row">
+                        <input id="newListName" placeholder="List name" />
+                        <button class="btn primary" id="createListBtn">Create List</button>
+                    </div>
+                    <div id="listsContainer" class="lists-container"></div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <dialog id="questionDialog" class="modal">
+        <form method="dialog" class="modal-card" id="questionForm">
+            <div class="modal-head">
+                <h2 id="questionDialogTitle">New Question</h2>
+                <button class="icon-btn" value="cancel" type="button" id="closeQuestionDialog">Close</button>
+            </div>
+
+            <div class="form-grid">
+                <label class="field">
+                    <span>Class</span>
+                    <input id="qClass" required list="classList" />
+                </label>
+                <label class="field">
+                    <span>Subject</span>
+                    <input id="qSubject" required list="subjectList" />
+                </label>
+                <label class="field">
+                    <span>Chapter</span>
+                    <input id="qChapter" required />
+                </label>
+                <label class="field">
+                    <span>Topic</span>
+                    <input id="qTopic" required />
+                </label>
+                <label class="field">
+                    <span>Difficulty</span>
+                    <select id="qDifficulty">
+                        <option>Easy</option>
+                        <option selected>Medium</option>
+                        <option>Hard</option>
+                        <option>Very Hard</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Question Type</span>
+                    <select id="qType">
+                        <option value="mcq">MCQ</option>
+                        <option value="true_false">True/False</option>
+                        <option value="fib">Fill in the Blank</option>
+                        <option value="short_answer">Short Answer</option>
+                    </select>
+                </label>
+                <label class="field">
+                    <span>Status</span>
+                    <select id="qStatus">
+                        <option value="published">Published</option>
+                        <option value="draft">Draft</option>
+                    </select>
+                </label>
+            </div>
+
+            <section class="editor-section">
+                <div class="section-head">
+                    <h3>Question</h3>
+                    <div class="rich-toolbar" data-toolbar-for="qPrompt">
+                        <button type="button" data-command="bold"><b>B</b></button>
+                        <button type="button" data-command="italic"><i>I</i></button>
+                        <button type="button" data-command="code">Code</button>
+                        <button type="button" data-insert="equation">Equation</button>
+                        <button type="button" data-insert="image">Image</button>
+                        <button type="button" data-insert="table">Table</button>
+                        <button type="button" data-insert="diagram">Diagram</button>
+                    </div>
+                </div>
+                <div id="qPrompt" class="rich-editor" contenteditable="true"></div>
+            </section>
+
+            <section id="answerEditor" class="editor-section"></section>
+
+            <section class="editor-section">
+                <div class="section-head">
+                    <h3>Translations</h3>
+                    <div class="language-row">
+                        <input id="translationLang" placeholder="Language code, e.g. hi" />
+                        <button class="btn" id="addTranslationBtn" type="button">Add Language</button>
+                    </div>
+                </div>
+                <div id="translationsContainer" class="translations-container"></div>
+            </section>
+
+            <div class="modal-actions">
+                <button class="btn danger" id="archiveQuestionBtn" type="button" hidden>Archive</button>
+                <span class="spacer"></span>
+                <button class="btn" id="cancelQuestionBtn" type="button">Cancel</button>
+                <button class="btn primary" id="saveQuestionBtn" type="submit">Save Question</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="toolDialog" class="modal small-modal">
+        <form method="dialog" class="modal-card">
+            <div class="modal-head">
+                <h2 id="toolDialogTitle">Insert</h2>
+                <button class="icon-btn" value="cancel" type="button" id="closeToolDialog">Close</button>
+            </div>
+            <div id="toolDialogBody"></div>
+            <div class="modal-actions">
+                <button class="btn" type="button" id="cancelToolBtn">Cancel</button>
+                <button class="btn primary" type="button" id="confirmToolBtn">Insert</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="importDialog" class="modal">
+        <form method="dialog" class="modal-card">
+            <div class="modal-head">
+                <h2>Import Questions</h2>
+                <button class="icon-btn" value="cancel" type="button" id="closeImportDialog">Close</button>
+            </div>
+            <div class="import-layout">
+                <label class="field">
+                    <span>Upload CSV</span>
+                    <input id="csvFileInput" type="file" accept=".csv,text/csv" />
+                </label>
+                <label class="field">
+                    <span>Paste CSV</span>
+                    <textarea id="csvPasteInput" rows="8" placeholder="Paste CSV here"></textarea>
+                </label>
+            </div>
+            <div class="prompt-panel">
+                <div class="form-grid">
+                    <label class="field">
+                        <span>Subject</span>
+                        <input id="promptSubject" value="Mathematics" />
+                    </label>
+                    <label class="field">
+                        <span>Class</span>
+                        <input id="promptClass" value="IX" />
+                    </label>
+                    <label class="field">
+                        <span>Count</span>
+                        <input id="promptCount" type="number" min="1" value="10" />
+                    </label>
+                    <label class="field">
+                        <span>Difficulty</span>
+                        <select id="promptDifficulty">
+                            <option>Easy</option>
+                            <option selected>Medium</option>
+                            <option>Hard</option>
+                            <option>Mixed</option>
+                        </select>
+                    </label>
+                    <label class="field wide">
+                        <span>Topic</span>
+                        <input id="promptTopic" placeholder="Optional" />
+                    </label>
+                </div>
+                <div class="prompt-actions">
+                    <button class="btn" type="button" id="copyPromptBtn">Copy AI Prompt</button>
+                    <button class="btn" type="button" id="downloadTemplateBtn">Download CSV Template</button>
+                </div>
+                <pre id="aiPromptText"></pre>
+            </div>
+            <div id="importPreview" class="import-preview"></div>
+            <div class="modal-actions">
+                <button class="btn" type="button" id="previewImportBtn">Preview</button>
+                <button class="btn primary" type="button" id="confirmImportBtn" disabled>Import Valid Rows</button>
+            </div>
+        </form>
+    </dialog>
+
+    <datalist id="classList">
+        <option value="VI"></option>
+        <option value="VII"></option>
+        <option value="VIII"></option>
+        <option value="IX"></option>
+        <option value="X"></option>
+        <option value="XI"></option>
+        <option value="XII"></option>
+    </datalist>
+    <datalist id="subjectList">
+        <option value="Mathematics"></option>
+        <option value="Science"></option>
+        <option value="Physics"></option>
+        <option value="Chemistry"></option>
+        <option value="Biology"></option>
+        <option value="English"></option>
+        <option value="Computer Science"></option>
+    </datalist>
+
+    <input id="hiddenImageInput" type="file" accept="image/*" hidden />
+    <div id="toast" class="toast"></div>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

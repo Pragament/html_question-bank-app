@@ -1,0 +1,611 @@
+:root {
+    color-scheme: light;
+    --bg: #edf1f5;
+    --panel: #ffffff;
+    --panel-soft: #f7f9fc;
+    --line: #d9e2ec;
+    --line-strong: #b8c7d6;
+    --text: #102235;
+    --muted: #63748a;
+    --primary: #1769aa;
+    --primary-dark: #0f548b;
+    --success: #157f55;
+    --danger: #b9362d;
+    --warning: #936812;
+    --shadow: 0 18px 42px rgba(16, 34, 53, 0.12);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: Inter, "Segoe UI", Roboto, Arial, sans-serif;
+    letter-spacing: 0;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
+
+.app-header {
+    min-height: 68px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    background: #102235;
+    color: #fff;
+}
+
+.app-header h1 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.app-header p {
+    margin: 3px 0 0;
+    color: #b8c8da;
+    font-size: 12px;
+}
+
+.header-actions,
+.content-toolbar,
+.view-tabs,
+.modal-actions,
+.prompt-actions,
+.language-row,
+.list-create-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn,
+.icon-btn,
+.tab,
+.rich-toolbar button,
+.pill-btn {
+    min-height: 34px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--text);
+    padding: 0 12px;
+    font-weight: 650;
+    font-size: 13px;
+}
+
+.btn:hover,
+.icon-btn:hover,
+.tab:hover,
+.rich-toolbar button:hover,
+.pill-btn:hover {
+    border-color: var(--line-strong);
+    background: #f1f5f9;
+}
+
+.btn.primary,
+.tab.active {
+    color: #fff;
+    border-color: var(--primary);
+    background: var(--primary);
+}
+
+.btn.primary:hover {
+    background: var(--primary-dark);
+}
+
+.btn.danger,
+.pill-btn.danger {
+    color: var(--danger);
+    border-color: #efc8c3;
+}
+
+.app-layout {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    min-height: calc(100vh - 68px);
+}
+
+.filters-panel,
+.content-panel {
+    min-width: 0;
+}
+
+.filters-panel {
+    background: var(--panel);
+    border-right: 1px solid var(--line);
+    padding: 14px;
+    overflow-y: auto;
+}
+
+.panel-head,
+.section-head,
+.modal-head,
+.question-card-head,
+.list-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.panel-head h2,
+.section-head h3,
+.modal-head h2,
+.list-head h3 {
+    margin: 0;
+}
+
+.panel-head h2 {
+    font-size: 16px;
+}
+
+.field {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0;
+}
+
+.field span {
+    color: #41546b;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.field input,
+.field select,
+.field textarea,
+.list-create-row input,
+.language-row input {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--text);
+    padding: 8px 10px;
+}
+
+.field textarea {
+    resize: vertical;
+}
+
+.content-panel {
+    padding: 16px;
+    overflow: auto;
+}
+
+.content-toolbar {
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+#activeUserLabel {
+    margin-left: 8px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.question-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+}
+
+.question-card,
+.list-card,
+.empty-card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(16, 34, 53, 0.05);
+}
+
+.question-card {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+}
+
+.empty-card {
+    padding: 24px;
+    color: var(--muted);
+}
+
+.question-card h3 {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.35;
+}
+
+.question-meta,
+.question-actions,
+.reaction-row,
+.card-footer,
+.option-row,
+.blank-bank,
+.translation-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.question-meta span,
+.status-chip,
+.type-chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    border-radius: 999px;
+    background: #eef3f8;
+    color: #405168;
+    padding: 0 9px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.status-chip.archived {
+    color: var(--danger);
+    background: #fff1ef;
+}
+
+.status-chip.draft {
+    color: var(--warning);
+    background: #fff8e8;
+}
+
+.card-answer {
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    color: #27384b;
+    font-size: 13px;
+}
+
+.rich-content,
+.rich-editor {
+    line-height: 1.5;
+}
+
+.rich-content img,
+.rich-editor img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    vertical-align: middle;
+}
+
+.rich-content table,
+.rich-editor table {
+    border-collapse: collapse;
+    max-width: 100%;
+    margin: 8px 0;
+}
+
+.rich-content td,
+.rich-content th,
+.rich-editor td,
+.rich-editor th {
+    border: 1px solid var(--line-strong);
+    padding: 6px 8px;
+    min-width: 50px;
+}
+
+.rich-editor {
+    min-height: 120px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px;
+    outline: none;
+    overflow: auto;
+}
+
+.rich-editor:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(23, 105, 170, 0.12);
+}
+
+.rich-toolbar {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.editor-section {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+}
+
+.option-editor,
+.tf-editor,
+.fib-editor,
+.short-editor,
+.translation-card,
+.formula-card {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+}
+
+.option-row {
+    align-items: flex-start;
+}
+
+.option-row label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 38px;
+    font-weight: 700;
+}
+
+.option-row .rich-editor {
+    flex: 1 1 240px;
+    min-height: 70px;
+}
+
+.fib-bank-list,
+.translations-container,
+.lists-container {
+    display: grid;
+    gap: 10px;
+}
+
+.blank-bank input {
+    min-height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 7px 9px;
+}
+
+.blank-bank input:first-child {
+    width: 120px;
+}
+
+.blank-bank input:nth-child(2) {
+    flex: 1 1 220px;
+}
+
+.modal {
+    width: min(1040px, calc(100vw - 24px));
+    border: none;
+    padding: 0;
+    background: transparent;
+}
+
+.small-modal {
+    width: min(760px, calc(100vw - 24px));
+}
+
+.modal::backdrop {
+    background: rgba(7, 18, 31, 0.52);
+}
+
+.modal-card {
+    display: grid;
+    gap: 14px;
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    padding: 16px;
+}
+
+.form-grid,
+.import-layout {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.wide {
+    grid-column: 1 / -1;
+}
+
+.modal-actions {
+    justify-content: flex-end;
+}
+
+.spacer {
+    flex: 1;
+}
+
+.prompt-panel,
+.import-preview {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel-soft);
+    padding: 12px;
+}
+
+.import-error {
+    margin-top: 10px;
+    border: 1px solid #efc8c3;
+    border-radius: 8px;
+    background: #fff7f6;
+    color: #5f231f;
+    padding: 10px;
+}
+
+.import-error ul {
+    margin: 8px 0 0;
+    padding-left: 18px;
+}
+
+.import-error code {
+    color: #102235;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 1px 5px;
+}
+
+#aiPromptText {
+    max-height: 220px;
+    overflow: auto;
+    margin: 10px 0 0;
+    white-space: pre-wrap;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px;
+    font-size: 12px;
+}
+
+.list-manager {
+    display: grid;
+    gap: 12px;
+}
+
+.list-create-row input {
+    flex: 1 1 240px;
+}
+
+.list-card {
+    padding: 14px;
+}
+
+.list-items {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.mini-question {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 8px;
+    background: #fff;
+}
+
+.formula-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 8px;
+}
+
+.formula-card {
+    text-align: left;
+}
+
+.diagram-preview {
+    min-height: 180px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 10px;
+    overflow: auto;
+}
+
+.toast {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    min-width: 220px;
+    max-width: calc(100vw - 32px);
+    transform: translateY(20px);
+    opacity: 0;
+    pointer-events: none;
+    border-radius: 8px;
+    background: #102235;
+    color: #fff;
+    padding: 11px 13px;
+    box-shadow: var(--shadow);
+    transition: opacity 0.18s, transform 0.18s;
+    font-size: 13px;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+@media (max-width: 980px) {
+    .app-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .filters-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .panel-head {
+        grid-column: 1 / -1;
+    }
+
+    .field {
+        margin: 0;
+    }
+}
+
+@media (max-width: 720px) {
+    .app-header,
+    .content-toolbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .header-actions,
+    .header-actions .btn,
+    .view-tabs,
+    .view-tabs .tab {
+        width: 100%;
+    }
+
+    .btn,
+    .tab {
+        justify-content: center;
+    }
+
+    .filters-panel,
+    .form-grid,
+    .import-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .question-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .option-row {
+        display: grid;
+    }
+
+    .modal-card {
+        padding: 12px;
+    }
+}
