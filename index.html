@@ -227,8 +227,19 @@
                     <span>Paste CSV</span>
                     <textarea id="csvPasteInput" rows="8" placeholder="Paste CSV here"></textarea>
                 </label>
+                <label class="field">
+                    <span>Add Imported Questions To</span>
+                    <select id="importListSelect">
+                        <option value="">Do not add to a list</option>
+                    </select>
+                </label>
+                <div class="modal-actions import-actions">
+                    <button class="btn" type="button" id="previewImportBtn">Preview</button>
+                    <button class="btn primary" type="button" id="confirmImportBtn" disabled>Import Valid Rows</button>
+                </div>
             </div>
-            <div class="prompt-panel">
+            <details class="prompt-panel" open>
+                <summary>AI Prompt Builder</summary>
                 <div class="form-grid">
                     <label class="field">
                         <span>Subject</span>
@@ -261,12 +272,8 @@
                     <button class="btn" type="button" id="downloadTemplateBtn">Download CSV Template</button>
                 </div>
                 <pre id="aiPromptText"></pre>
-            </div>
+            </details>
             <div id="importPreview" class="import-preview"></div>
-            <div class="modal-actions">
-                <button class="btn" type="button" id="previewImportBtn">Preview</button>
-                <button class="btn primary" type="button" id="confirmImportBtn" disabled>Import Valid Rows</button>
-            </div>
         </form>
     </dialog>
 

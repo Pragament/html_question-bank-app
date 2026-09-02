@@ -8,6 +8,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
     addDoc,
+    arrayUnion,
     collection,
     deleteDoc,
     doc,
@@ -122,6 +123,7 @@ const els = {
     toolDialogTitle: $('toolDialogTitle'),
     toolDialogBody: $('toolDialogBody'),
     importDialog: $('importDialog'),
+    importListSelect: $('importListSelect'),
     importPreview: $('importPreview'),
     aiPromptText: $('aiPromptText'),
     listsContainer: $('listsContainer'),
@@ -155,7 +157,10 @@ function bindEvents() {
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.newQuestionBtn.addEventListener('click', () => openQuestionDialog());
     els.exportBtn.addEventListener('click', exportFilteredCsv);
-    els.importBtn.addEventListener('click', () => els.importDialog.showModal());
+    els.importBtn.addEventListener('click', () => {
+        renderImportListOptions();
+        els.importDialog.showModal();
+    });
     els.templatesBtn.addEventListener('click', downloadTemplateCsv);
     $('closeQuestionDialog').addEventListener('click', closeQuestionDialog);
     $('cancelQuestionBtn').addEventListener('click', closeQuestionDialog);
@@ -250,6 +255,7 @@ function listenForLists() {
     if (unsubscribeLists) unsubscribeLists();
     if (!currentUser) {
         lists = [];
+        renderImportListOptions();
         renderLists();
         return;
     }
@@ -260,6 +266,7 @@ function listenForLists() {
             const bTime = b.updatedAt?.toMillis?.() || 0;
             return bTime - aTime;
         });
+        renderImportListOptions();
         renderLists();
         render();
     });
@@ -953,8 +960,10 @@ function previewImport() {
 
 async function confirmImport() {
     if (!currentUser) return toast('Sign in to import');
+    const selectedListId = els.importListSelect.value;
+    const importedQuestionIds = [];
     for (const row of importRows) {
-        await addDoc(collection(db, COLLECTIONS.questions), {
+        const createdQuestion = await addDoc(collection(db, COLLECTIONS.questions), {
             ...row,
             authorUid: currentUser.uid,
             authorName: currentUser.displayName || currentUser.email || 'Teacher',
@@ -962,11 +971,31 @@ async function confirmImport() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
         });
+        importedQuestionIds.push(createdQuestion.id);
+    }
+    if (selectedListId && importedQuestionIds.length) {
+        await updateDoc(doc(db, COLLECTIONS.lists, selectedListId), {
+            questionIds: arrayUnion(...importedQuestionIds),
+            updatedAt: serverTimestamp()
+        });
     }
     els.importDialog.close();
     $('csvPasteInput').value = '';
+    $('csvFileInput').value = '';
+    els.importListSelect.value = '';
     importRows = [];
-    toast('Questions imported');
+    toast(selectedListId ? 'Questions imported and added to list' : 'Questions imported');
+}
+
+function renderImportListOptions() {
+    if (!els.importListSelect) return;
+    const selected = els.importListSelect.value;
+    els.importListSelect.innerHTML = `
+        <option value="">Do not add to a list</option>
+        ${lists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')}
+    `;
+    els.importListSelect.value = lists.some(list => list.id === selected) ? selected : '';
+    els.importListSelect.disabled = !currentUser || !lists.length;
 }
 
 function parseCsvQuestions(text) {
