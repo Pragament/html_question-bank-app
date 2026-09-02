@@ -432,6 +432,12 @@ button {
     justify-content: flex-end;
 }
 
+.import-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    margin-top: -2px;
+}
+
 .spacer {
     flex: 1;
 }
@@ -442,6 +448,19 @@ button {
     border-radius: 8px;
     background: var(--panel-soft);
     padding: 12px;
+}
+
+.prompt-panel summary {
+    color: #41546b;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 800;
+    list-style-position: inside;
+    text-transform: uppercase;
+}
+
+.prompt-panel .form-grid {
+    margin-top: 10px;
 }
 
 .import-error {
@@ -468,9 +487,12 @@ button {
 
 #aiPromptText {
     max-height: 220px;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overflow-wrap: anywhere;
     margin: 10px 0 0;
     white-space: pre-wrap;
+    word-break: break-word;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: #fff;
