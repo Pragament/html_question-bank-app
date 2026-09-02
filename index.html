@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Question Bank Studio</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/intro.js@8.5.0/minified/introjs.min.css" />
     <link rel="stylesheet" href="styles.css" />
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/intro.js@8.5.0/minified/intro.min.js"></script>
 </head>
 <body>
     <header class="app-header">
@@ -16,6 +18,7 @@
             <p id="syncStatus">Connecting to Firestore...</p>
         </div>
         <div class="header-actions">
+            <button class="btn" id="onboardingBtn">Guide</button>
             <button class="btn" id="templatesBtn">Templates</button>
             <button class="btn" id="importBtn">Import</button>
             <button class="btn" id="exportBtn">Export CSV</button>
@@ -88,8 +91,8 @@
                     <span id="activeUserLabel"></span>
                 </div>
                 <div class="view-tabs" role="tablist">
-                    <button class="tab active" data-view="bank">Bank</button>
-                    <button class="tab" data-view="lists">Lists</button>
+                    <button class="tab active" id="bankTab" data-view="bank">Bank</button>
+                    <button class="tab" id="listsTab" data-view="lists">Lists</button>
                 </div>
             </div>
 

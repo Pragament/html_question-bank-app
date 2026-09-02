@@ -109,6 +109,35 @@ button {
     background: var(--primary-dark);
 }
 
+.introjs-tooltip {
+    border-radius: 8px;
+    color: var(--text);
+}
+
+.introjs-tooltiptext {
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.introjs-button {
+    border-radius: 7px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 650;
+    text-shadow: none;
+}
+
+.introjs-nextbutton,
+.introjs-donebutton {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.introjs-prevbutton {
+    color: var(--text);
+}
+
 .btn.danger,
 .pill-btn.danger {
     color: var(--danger);
