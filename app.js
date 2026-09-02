@@ -1411,7 +1411,8 @@ Requirements:
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
 - For translated content, fill language, translated_question, translated_answer, and translated_option_a through translated_option_d when relevant.
-- Return only valid CSV.`;
+- Escape commas and quotation marks correctly according to CSV rules.
+- Return only valid CSV inside one csv code block.`;
 }
 
 async function copyPrompt() {
