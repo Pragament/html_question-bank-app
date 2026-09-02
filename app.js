@@ -46,6 +46,7 @@ const TYPE_LABELS = {
 };
 
 const LABELS = ['A', 'B', 'C', 'D'];
+const ONBOARDING_PROMPT_STORAGE_KEY = 'qb_hide_onboarding_prompt_v1';
 const TEMPLATE_HEADERS = [
     'type',
     'class',
@@ -112,6 +113,7 @@ const els = {
     exportBtn: $('exportBtn'),
     importBtn: $('importBtn'),
     templatesBtn: $('templatesBtn'),
+    listFilter: $('listFilter'),
     questionGrid: $('questionGrid'),
     questionCount: $('questionCount'),
     activeUserLabel: $('activeUserLabel'),
@@ -123,6 +125,7 @@ const els = {
     toolDialog: $('toolDialog'),
     toolDialogTitle: $('toolDialogTitle'),
     toolDialogBody: $('toolDialogBody'),
+    onboardingPromptDialog: $('onboardingPromptDialog'),
     importDialog: $('importDialog'),
     importListSelect: $('importListSelect'),
     importPreview: $('importPreview'),
@@ -131,7 +134,7 @@ const els = {
     toast: $('toast')
 };
 
-const filterIds = ['searchInput', 'classFilter', 'subjectFilter', 'chapterFilter', 'topicFilter', 'difficultyFilter', 'typeFilter', 'visibilityFilter'];
+const filterIds = ['searchInput', 'classFilter', 'subjectFilter', 'chapterFilter', 'topicFilter', 'difficultyFilter', 'typeFilter', 'likesFilter', 'dislikesFilter', 'visibilityFilter'];
 
 if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
@@ -139,6 +142,7 @@ if (window.mermaid) {
 
 bindEvents();
 renderPrompt();
+promptOnboardingOnRefresh();
 
 onAuthStateChanged(auth, (user) => {
     currentUser = user;
@@ -174,6 +178,9 @@ function bindEvents() {
     $('cancelToolBtn').addEventListener('click', () => els.toolDialog.close());
     $('confirmToolBtn').addEventListener('click', confirmToolInsert);
     $('hiddenImageInput').addEventListener('change', insertSelectedImage);
+    $('closeOnboardingPrompt').addEventListener('click', closeOnboardingPrompt);
+    $('skipOnboardingBtn').addEventListener('click', closeOnboardingPrompt);
+    $('startOnboardingPromptBtn').addEventListener('click', startPromptedOnboarding);
     $('closeImportDialog').addEventListener('click', () => els.importDialog.close());
     $('previewImportBtn').addEventListener('click', previewImport);
     $('confirmImportBtn').addEventListener('click', confirmImport);
@@ -189,6 +196,7 @@ function bindEvents() {
     });
     filterIds.forEach(id => $(id).addEventListener('input', render));
     filterIds.forEach(id => $(id).addEventListener('change', render));
+    els.listFilter.addEventListener('change', render);
 
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
@@ -220,8 +228,9 @@ function bindEvents() {
 function startOnboarding() {
     if (!window.introJs) {
         toast('Guide is still loading. Try again in a moment.');
-        return;
+        return false;
     }
+    if (els.onboardingPromptDialog.open) closeOnboardingPrompt();
     const tour = window.introJs.tour ? window.introJs.tour() : window.introJs();
     const importWasOpen = els.importDialog.open;
     const questionWasOpen = els.questionDialog.open;
@@ -241,6 +250,7 @@ function startOnboarding() {
     tour.oncomplete(() => finishOnboarding(importWasOpen, questionWasOpen));
     tour.onexit(() => finishOnboarding(importWasOpen, questionWasOpen));
     tour.start();
+    return true;
 }
 
 function getOnboardingSteps() {
@@ -338,6 +348,34 @@ function closeDialogForTour(dialog) {
     if (dialog?.open) dialog.close();
 }
 
+function promptOnboardingOnRefresh() {
+    if (localStorage.getItem(ONBOARDING_PROMPT_STORAGE_KEY) === 'true') return;
+    window.setTimeout(() => {
+        if (!els.onboardingPromptDialog.open) els.onboardingPromptDialog.showModal();
+    }, 500);
+}
+
+function startPromptedOnboarding() {
+    saveOnboardingPromptPreference();
+    if (window.introJs) {
+        els.onboardingPromptDialog.close();
+        startOnboarding();
+    } else {
+        toast('Guide is still loading. Try again in a moment.');
+    }
+}
+
+function closeOnboardingPrompt() {
+    saveOnboardingPromptPreference();
+    els.onboardingPromptDialog.close();
+}
+
+function saveOnboardingPromptPreference() {
+    if ($('hideOnboardingPrompt').checked) {
+        localStorage.setItem(ONBOARDING_PROMPT_STORAGE_KEY, 'true');
+    }
+}
+
 function listenForQuestions() {
     unsubscribeQuestions.forEach(unsubscribe => unsubscribe());
     unsubscribeQuestions = [];
@@ -378,6 +416,7 @@ function listenForLists() {
     if (unsubscribeLists) unsubscribeLists();
     if (!currentUser) {
         lists = [];
+        renderListFilterOptions();
         renderImportListOptions();
         renderLists();
         return;
@@ -389,6 +428,7 @@ function listenForLists() {
             const bTime = b.updatedAt?.toMillis?.() || 0;
             return bTime - aTime;
         });
+        renderListFilterOptions();
         renderImportListOptions();
         renderLists();
         render();
@@ -424,7 +464,16 @@ function render() {
 function getFilteredQuestions() {
     const filters = Object.fromEntries(filterIds.map(id => [id, $(id).value.trim()]));
     const queryText = filters.searchInput.toLowerCase();
+    const minLikes = parseOptionalNumber(filters.likesFilter);
+    const minDislikes = parseOptionalNumber(filters.dislikesFilter);
+    const selectedListIds = getSelectedListIds();
+    const selectedQuestionIds = selectedListIds.length ? new Set(
+        lists
+            .filter(list => selectedListIds.includes(list.id))
+            .flatMap(list => list.questionIds || [])
+    ) : null;
     return questions.filter(q => {
+        const reaction = reactions.get(q.id) || { likes: 0, dislikes: 0 };
         const isMine = currentUser && q.authorUid === currentUser.uid;
         const visibleByStatus = q.status === 'published' || (isMine && filters.visibilityFilter !== 'published');
         const visibilityOk = filters.visibilityFilter === 'mine' ? isMine : visibleByStatus;
@@ -435,6 +484,9 @@ function getFilteredQuestions() {
         if (filters.topicFilter && !contains(q.topic, filters.topicFilter)) return false;
         if (filters.difficultyFilter && q.difficulty !== filters.difficultyFilter) return false;
         if (filters.typeFilter && q.type !== filters.typeFilter) return false;
+        if (minLikes !== null && reaction.likes < minLikes) return false;
+        if (minDislikes !== null && reaction.dislikes < minDislikes) return false;
+        if (selectedQuestionIds && !selectedQuestionIds.has(q.id)) return false;
         if (!queryText) return true;
         return [
             q.promptHtml,
@@ -446,6 +498,16 @@ function getFilteredQuestions() {
             q.authorName
         ].some(value => stripHtml(value).toLowerCase().includes(queryText));
     });
+}
+
+function parseOptionalNumber(value) {
+    if (value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getSelectedListIds() {
+    return Array.from(els.listFilter.selectedOptions).map(option => option.value).filter(Boolean);
 }
 
 function questionCard(q) {
@@ -1121,6 +1183,17 @@ function renderImportListOptions() {
     els.importListSelect.disabled = !currentUser || !lists.length;
 }
 
+function renderListFilterOptions() {
+    const selected = new Set(getSelectedListIds());
+    els.listFilter.innerHTML = lists.length
+        ? lists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')
+        : '<option value="" disabled>No lists available</option>';
+    Array.from(els.listFilter.options).forEach(option => {
+        option.selected = selected.has(option.value);
+    });
+    els.listFilter.disabled = !currentUser || !lists.length;
+}
+
 function parseCsvQuestions(text) {
     const rows = parseCsv(text);
     const errors = [];
@@ -1350,6 +1423,9 @@ function clearFilters() {
     filterIds.forEach(id => {
         if (id === 'visibilityFilter') $(id).value = currentUser ? 'all' : 'published';
         else $(id).value = '';
+    });
+    Array.from(els.listFilter.options).forEach(option => {
+        option.selected = false;
     });
     render();
 }

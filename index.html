@@ -75,6 +75,18 @@
                 </select>
             </label>
             <label class="field">
+                <span>Minimum Likes</span>
+                <input id="likesFilter" type="number" min="0" step="1" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>Minimum Dislikes</span>
+                <input id="dislikesFilter" type="number" min="0" step="1" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>Lists</span>
+                <select id="listFilter" multiple size="4"></select>
+            </label>
+            <label class="field">
                 <span>Visibility</span>
                 <select id="visibilityFilter">
                     <option value="published">Published</option>
@@ -211,6 +223,24 @@
             <div class="modal-actions">
                 <button class="btn" type="button" id="cancelToolBtn">Cancel</button>
                 <button class="btn primary" type="button" id="confirmToolBtn">Insert</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="onboardingPromptDialog" class="modal small-modal">
+        <form method="dialog" class="modal-card">
+            <div class="modal-head">
+                <h2>Take a Guided Tour?</h2>
+                <button class="icon-btn" value="cancel" type="button" id="closeOnboardingPrompt">Close</button>
+            </div>
+            <p class="modal-copy">Walk through login, lists, adding existing questions, AI CSV import, preview, and importing into a list.</p>
+            <label class="check-row">
+                <input id="hideOnboardingPrompt" type="checkbox" />
+                <span>Do not show this tour prompt again on refresh</span>
+            </label>
+            <div class="modal-actions">
+                <button class="btn" type="button" id="skipOnboardingBtn">Maybe Later</button>
+                <button class="btn primary" type="button" id="startOnboardingPromptBtn">Take Tour</button>
             </div>
         </form>
     </dialog>

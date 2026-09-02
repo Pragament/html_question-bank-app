@@ -215,6 +215,14 @@ button {
     resize: vertical;
 }
 
+#listFilter {
+    min-height: 112px;
+}
+
+#listFilter:disabled {
+    color: var(--muted);
+}
+
 .content-panel {
     padding: 16px;
     overflow: auto;
@@ -444,6 +452,24 @@ button {
     background: var(--panel);
     box-shadow: var(--shadow);
     padding: 16px;
+}
+
+.modal-copy {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+}
+
+.check-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: #41546b;
+    font-size: 13px;
+}
+
+.check-row input {
+    margin-top: 2px;
 }
 
 .form-grid,
