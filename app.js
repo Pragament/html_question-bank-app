@@ -97,11 +97,168 @@ let reactions = new Map();
 let lists = [];
 let activeQuestionId = null;
 let activeEditor = null;
+let savedSelectionRange = null;
+let activeTarget = null;
 let selectedTableCell = null;
 let importRows = [];
 let unsubscribeQuestions = [];
 let unsubscribeLists = null;
 let toastTimer = null;
+
+function isEligibleInputField(el) {
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return false;
+    if (el.closest('#toolDialog') || el.closest('#onboardingPromptDialog') || el.closest('#importDialog')) return false;
+    if (el.type === 'checkbox' || el.type === 'radio' || el.type === 'submit' || el.type === 'button') return false;
+    if (el.id === 'translationLang' || el.id === 'newListName') return false;
+    if (el.classList.contains('fib-answers') || el.classList.contains('fib-label')) return true;
+    if (el.classList.contains('translation-question') || el.classList.contains('translation-answer') || el.classList.contains('translation-option')) return true;
+    if (el.closest('#answerEditor') || el.closest('.translation-card')) return true;
+    return false;
+}
+
+function getEditorForRange(range) {
+    if (!range) return null;
+    try {
+        const container = range.commonAncestorContainer;
+        if (!container) return null;
+        const el = container.nodeType === Node.ELEMENT_NODE ? container : container.parentElement;
+        const editor = el?.closest('.rich-editor');
+        if (editor && editor.isConnected) {
+            return editor;
+        }
+    } catch {
+        return null;
+    }
+    return null;
+}
+
+function saveCurrentTarget(targetEl = null) {
+    const activeEl = targetEl || document.activeElement;
+    if (isEligibleInputField(activeEl)) {
+        activeTarget = {
+            type: 'input',
+            element: activeEl,
+            start: activeEl.selectionStart ?? activeEl.value.length,
+            end: activeEl.selectionEnd ?? activeEl.value.length
+        };
+        activeEditor = activeEl;
+        savedSelectionRange = null;
+        return;
+    }
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const editor = getEditorForRange(range);
+        if (editor) {
+            activeTarget = {
+                type: 'rich',
+                element: editor,
+                range: range.cloneRange()
+            };
+            activeEditor = editor;
+            savedSelectionRange = range.cloneRange();
+            return;
+        }
+    }
+
+    if (activeEl && activeEl.classList?.contains('rich-editor')) {
+        activeEditor = activeEl;
+        const range = document.createRange();
+        range.selectNodeContents(activeEl);
+        range.collapse(false);
+        savedSelectionRange = range;
+        activeTarget = { type: 'rich', element: activeEl, range };
+    }
+}
+
+function saveCurrentSelection() {
+    saveCurrentTarget();
+}
+
+function ensureSavedSelection() {
+    if (activeTarget && activeTarget.type === 'input' && activeTarget.element?.isConnected) {
+        activeEditor = activeTarget.element;
+        return;
+    }
+
+    const existingEditor = (activeTarget && activeTarget.type === 'rich' && activeTarget.element?.isConnected)
+        ? activeTarget.element
+        : getEditorForRange(savedSelectionRange);
+
+    if (existingEditor && existingEditor.isConnected) {
+        activeEditor = existingEditor;
+        if (!activeTarget || activeTarget.type !== 'rich' || activeTarget.element !== existingEditor) {
+            const range = savedSelectionRange || document.createRange();
+            if (!savedSelectionRange) {
+                range.selectNodeContents(existingEditor);
+                range.collapse(false);
+                savedSelectionRange = range;
+            }
+            activeTarget = { type: 'rich', element: existingEditor, range };
+        }
+        return;
+    }
+
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const selEditor = getEditorForRange(range);
+        if (selEditor) {
+            activeEditor = selEditor;
+            savedSelectionRange = range.cloneRange();
+            activeTarget = { type: 'rich', element: selEditor, range: savedSelectionRange };
+            return;
+        }
+    }
+
+    if (!activeEditor || !activeEditor.isConnected) {
+        activeEditor = $('qPrompt');
+    }
+    if (activeEditor) {
+        if (isEligibleInputField(activeEditor)) {
+            activeTarget = {
+                type: 'input',
+                element: activeEditor,
+                start: activeEditor.selectionStart ?? activeEditor.value.length,
+                end: activeEditor.selectionEnd ?? activeEditor.value.length
+            };
+            savedSelectionRange = null;
+        } else {
+            const range = document.createRange();
+            range.selectNodeContents(activeEditor);
+            range.collapse(false);
+            savedSelectionRange = range;
+            activeTarget = { type: 'rich', element: activeEditor, range };
+        }
+    }
+}
+
+function restoreTargetFocus() {
+    if (activeTarget && activeTarget.type === 'input' && activeTarget.element?.isConnected) {
+        const input = activeTarget.element;
+        input.focus();
+        try {
+            const pos = activeTarget.start ?? input.value.length;
+            input.setSelectionRange(pos, pos);
+        } catch {}
+        return;
+    }
+    const editor = (activeTarget && activeTarget.type === 'rich' && activeTarget.element?.isConnected)
+        ? activeTarget.element
+        : (getEditorForRange(savedSelectionRange) || activeEditor);
+    if (editor && editor.isConnected) {
+        editor.focus();
+        const range = activeTarget?.range || savedSelectionRange;
+        if (range) {
+            try {
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            } catch {}
+        }
+    }
+}
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -174,8 +331,17 @@ function bindEvents() {
     els.questionForm.addEventListener('submit', saveQuestion);
     $('qType').addEventListener('change', () => renderAnswerEditor());
     $('addTranslationBtn').addEventListener('click', addTranslationBlock);
-    $('closeToolDialog').addEventListener('click', () => els.toolDialog.close());
-    $('cancelToolBtn').addEventListener('click', () => els.toolDialog.close());
+    $('closeToolDialog').addEventListener('click', () => {
+        els.toolDialog.close();
+        restoreTargetFocus();
+    });
+    $('cancelToolBtn').addEventListener('click', () => {
+        els.toolDialog.close();
+        restoreTargetFocus();
+    });
+    els.toolDialog.addEventListener('cancel', () => {
+        restoreTargetFocus();
+    });
     $('confirmToolBtn').addEventListener('click', confirmToolInsert);
     $('hiddenImageInput').addEventListener('change', insertSelectedImage);
     $('closeOnboardingPrompt').addEventListener('click', closeOnboardingPrompt);
@@ -201,13 +367,47 @@ function bindEvents() {
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
     });
+    document.addEventListener('selectionchange', () => saveCurrentTarget());
     document.addEventListener('focusin', (event) => {
-        const editor = event.target.closest('.rich-editor');
-        if (editor) activeEditor = editor;
+        if (isEligibleInputField(event.target)) {
+            saveCurrentTarget(event.target);
+        } else {
+            const editor = event.target.closest('.rich-editor');
+            if (editor) {
+                activeEditor = editor;
+                saveCurrentTarget(editor);
+            }
+        }
         const cell = event.target.closest('td, th');
         if (cell && cell.closest('.rich-editor')) {
             selectedTableCell = cell;
             showTableTools(cell);
+        }
+    });
+    document.addEventListener('mouseup', (event) => {
+        if (isEligibleInputField(event.target)) {
+            saveCurrentTarget(event.target);
+        } else if (event.target.closest('.rich-editor')) {
+            saveCurrentTarget();
+        }
+    });
+    document.addEventListener('keyup', (event) => {
+        if (isEligibleInputField(event.target)) {
+            saveCurrentTarget(event.target);
+        } else if (event.target.closest('.rich-editor')) {
+            saveCurrentTarget();
+        }
+    });
+    document.addEventListener('input', (event) => {
+        if (isEligibleInputField(event.target)) {
+            saveCurrentTarget(event.target);
+        } else if (event.target.closest('.rich-editor')) {
+            saveCurrentTarget();
+        }
+    });
+    document.addEventListener('select', (event) => {
+        if (isEligibleInputField(event.target)) {
+            saveCurrentTarget(event.target);
         }
     });
     document.addEventListener('click', (event) => {
@@ -215,13 +415,59 @@ function bindEvents() {
             hideTableTools();
         }
     });
+    document.addEventListener('mousedown', (event) => {
+        const toolbarButton = event.target.closest('.rich-toolbar button');
+        if (!toolbarButton) {
+            if (isEligibleInputField(event.target)) {
+                saveCurrentTarget(event.target);
+            }
+            return;
+        }
+
+        if (isEligibleInputField(document.activeElement)) {
+            saveCurrentTarget(document.activeElement);
+        } else if (document.activeElement?.closest?.('.rich-editor')) {
+            saveCurrentTarget();
+        }
+
+        const hasValidTarget = (activeTarget?.type === 'input' && activeTarget.element?.isConnected) ||
+                               (activeTarget?.type === 'rich' && activeTarget.element?.isConnected);
+
+        if (!hasValidTarget) {
+            const toolbarEditorId = toolbarButton.closest('.rich-toolbar')?.dataset.toolbarFor;
+            const toolbarEditor = toolbarEditorId ? $(toolbarEditorId) : null;
+            if (toolbarEditor) {
+                activeEditor = toolbarEditor;
+                ensureSavedSelection();
+            }
+        }
+
+        event.preventDefault();
+    });
     document.addEventListener('click', (event) => {
         const toolbarButton = event.target.closest('.rich-toolbar button');
         if (!toolbarButton) return;
-        const editorId = toolbarButton.closest('.rich-toolbar')?.dataset.toolbarFor;
-        activeEditor = editorId ? $(editorId) : activeEditor;
-        if (toolbarButton.dataset.command) applyEditorCommand(toolbarButton.dataset.command);
-        if (toolbarButton.dataset.insert) openTool(toolbarButton.dataset.insert);
+
+        const hasValidTarget = (activeTarget?.type === 'input' && activeTarget.element?.isConnected) ||
+                               (activeTarget?.type === 'rich' && activeTarget.element?.isConnected);
+
+        if (!hasValidTarget) {
+            const toolbarEditorId = toolbarButton.closest('.rich-toolbar')?.dataset.toolbarFor;
+            const toolbarEditor = toolbarEditorId ? $(toolbarEditorId) : null;
+            if (toolbarEditor) {
+                activeEditor = toolbarEditor;
+                ensureSavedSelection();
+            }
+        }
+
+        if (toolbarButton.dataset.command) {
+            if (activeTarget?.type === 'rich' || (!activeTarget && activeEditor)) {
+                applyEditorCommand(toolbarButton.dataset.command);
+            }
+        }
+        if (toolbarButton.dataset.insert) {
+            openTool(toolbarButton.dataset.insert);
+        }
     });
 }
 
@@ -602,11 +848,17 @@ function openQuestionDialog(question = null) {
     $('qPrompt').innerHTML = sanitizeRich(question?.promptHtml || '');
     renderAnswerEditor(question);
     renderTranslations(question?.translations || {});
+    activeEditor = null;
+    savedSelectionRange = null;
+    activeTarget = null;
     els.questionDialog.showModal();
 }
 
 function closeQuestionDialog() {
     activeQuestionId = null;
+    activeEditor = null;
+    savedSelectionRange = null;
+    activeTarget = null;
     els.questionDialog.close();
 }
 
@@ -876,8 +1128,11 @@ function switchView(view) {
 }
 
 function applyEditorCommand(command) {
-    if (!activeEditor) return;
-    activeEditor.focus();
+    const editor = (activeTarget && activeTarget.type === 'rich' && activeTarget.element?.isConnected)
+        ? activeTarget.element
+        : (getEditorForRange(savedSelectionRange) || activeEditor);
+    if (!editor || !editor.classList?.contains('rich-editor')) return;
+    editor.focus();
     if (command === 'code') {
         document.execCommand('formatBlock', false, 'pre');
     } else {
@@ -885,34 +1140,91 @@ function applyEditorCommand(command) {
     }
 }
 
-function openTool(kind) {
-    if (!activeEditor) return toast('Place the cursor in an editor first');
+function openTool(kind, initialVal) {
+    if (!activeTarget || !activeTarget.element?.isConnected) {
+        ensureSavedSelection();
+    }
+    if (!activeTarget || !activeTarget.element?.isConnected) {
+        return toast('Place the cursor in an editor or field first');
+    }
     els.toolDialog.dataset.tool = kind;
     els.toolDialogTitle.textContent = `Insert ${kind[0].toUpperCase()}${kind.slice(1)}`;
     if (kind === 'equation') {
+        const currentLatex = initialVal !== undefined ? initialVal : (FORMULA_LIBRARY[0]?.latex || '\\frac{a}{b}');
         els.toolDialogBody.innerHTML = `
-            <label class="field"><span>LaTeX</span><input id="latexInput" value="\\frac{a}{b}"></label>
+            <label class="field"><span>LaTeX Expression</span><input id="latexInput" value="${esc(currentLatex)}"></label>
             <div class="form-grid">
                 <label class="field"><span>Save Name</span><input id="customFormulaName" placeholder="Custom formula name"></label>
                 <label class="field"><span>Category</span><input id="customFormulaCategory" value="Custom"></label>
                 <label class="field"><span>Action</span><button class="btn" id="saveCustomFormulaBtn" type="button">Save Custom Equation</button></label>
             </div>
-            <div class="formula-grid">${formulaCardsHtml()}</div>
+            <label class="field" style="margin-top: 6px;"><span>Formula Library (Click to select, double-click to insert)</span></label>
+            <div class="formula-grid">${formulaCardsHtml(currentLatex)}</div>
+            <label class="field" style="margin-top: 6px;"><span>Preview</span></label>
             <div id="formulaPreview" class="diagram-preview"></div>
         `;
-        $('latexInput').addEventListener('input', renderFormulaPreview);
-        $('saveCustomFormulaBtn').addEventListener('click', saveCustomFormulaFromModal);
-        document.querySelectorAll('[data-latex]').forEach(btn => btn.addEventListener('click', (event) => {
-            if (event.target.closest('[data-favorite]')) return;
-            $('latexInput').value = btn.dataset.latex;
-            saveRecentFormula(btn.dataset.latex);
+
+        const latexInput = $('latexInput');
+        const cards = els.toolDialogBody.querySelectorAll('.formula-card[data-latex]');
+
+        function updateSelectionHighlight(val) {
+            cards.forEach(card => {
+                if (card.dataset.latex === val) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+        }
+
+        latexInput.addEventListener('input', () => {
+            updateSelectionHighlight(latexInput.value.trim());
             renderFormulaPreview();
-        }));
-        document.querySelectorAll('[data-favorite]').forEach(btn => btn.addEventListener('click', (event) => {
-            event.stopPropagation();
-            toggleFavoriteFormula(btn.dataset.favorite);
-            openTool('equation');
-        }));
+        });
+
+        latexInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                confirmToolInsert();
+            }
+        });
+
+        $('saveCustomFormulaBtn').addEventListener('click', saveCustomFormulaFromModal);
+
+        cards.forEach(btn => {
+            btn.addEventListener('click', (event) => {
+                if (event.target.closest('[data-favorite]')) return;
+                cards.forEach(c => c.classList.remove('selected'));
+                btn.classList.add('selected');
+                latexInput.value = btn.dataset.latex;
+                const nameInput = $('customFormulaName');
+                if (nameInput && !nameInput.value.trim()) {
+                    nameInput.value = btn.querySelector('strong')?.textContent || '';
+                }
+                saveRecentFormula(btn.dataset.latex);
+                renderFormulaPreview();
+            });
+
+            btn.addEventListener('dblclick', (event) => {
+                if (event.target.closest('[data-favorite]')) return;
+                cards.forEach(c => c.classList.remove('selected'));
+                btn.classList.add('selected');
+                latexInput.value = btn.dataset.latex;
+                saveRecentFormula(btn.dataset.latex);
+                confirmToolInsert();
+            });
+        });
+
+        els.toolDialogBody.querySelectorAll('[data-favorite]').forEach(btn => {
+            btn.addEventListener('click', (event) => {
+                event.stopPropagation();
+                const latex = btn.dataset.favorite;
+                toggleFavoriteFormula(latex);
+                const currentVal = $('latexInput')?.value || latex;
+                openTool('equation', currentVal);
+            });
+        });
+
         renderFormulaPreview();
     } else if (kind === 'diagram') {
         els.toolDialogBody.innerHTML = `
@@ -939,43 +1251,160 @@ function openTool(kind) {
     if (!els.toolDialog.open) els.toolDialog.showModal();
 }
 
+let isConfirmingTool = false;
+
 function confirmToolInsert() {
-    const kind = els.toolDialog.dataset.tool;
-    if (kind === 'equation') {
-        const latex = $('latexInput').value.trim();
-        if (!latex) return;
-        insertHtml(renderMathToken(latex));
-        saveRecentFormula(latex);
+    if (isConfirmingTool) return;
+    isConfirmingTool = true;
+    try {
+        const kind = els.toolDialog.dataset.tool;
+        let htmlToInsert = null;
+        let textToInsert = null;
+        let latexToSave = null;
+
+        if (kind === 'equation') {
+            const latex = $('latexInput')?.value.trim();
+            if (!latex) return toast('Please select or enter a formula');
+            htmlToInsert = renderMathToken(latex);
+            textToInsert = latex;
+            latexToSave = latex;
+        } else if (kind === 'diagram') {
+            const code = $('diagramInput')?.value.trim();
+            if (!code) return toast('Please enter Mermaid diagram code');
+            htmlToInsert = `<div class="mermaid-token" data-code="${esc(code)}"><pre>${esc(code)}</pre></div><p></p>`;
+            textToInsert = code;
+        } else if (kind === 'table') {
+            const rows = Number($('tableRows')?.value || 2);
+            const cols = Number($('tableCols')?.value || 2);
+            htmlToInsert = createTableHtml(rows, cols);
+            textToInsert = `[Table ${rows}x${cols}]`;
+        }
+
+        els.toolDialog.close();
+
+        if (htmlToInsert || textToInsert) {
+            insertContentAtTarget(htmlToInsert, textToInsert);
+        }
+        if (latexToSave) {
+            saveRecentFormula(latexToSave);
+        }
+    } finally {
+        setTimeout(() => {
+            isConfirmingTool = false;
+        }, 200);
     }
-    if (kind === 'diagram') {
-        const code = $('diagramInput').value.trim();
-        if (!code) return;
-        insertHtml(`<div class="mermaid-token" data-code="${esc(code)}"><pre>${esc(code)}</pre></div>`);
-    }
-    if (kind === 'table') {
-        const rows = Number($('tableRows').value || 2);
-        const cols = Number($('tableCols').value || 2);
-        insertHtml(createTableHtml(rows, cols));
-    }
-    els.toolDialog.close();
 }
 
 function insertSelectedImage(event) {
     const file = event.target.files?.[0];
-    if (!file || !activeEditor) return;
+    if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => insertHtml(`<img src="${reader.result}" alt="">`);
+    reader.onload = () => {
+        const html = `<img src="${reader.result}" alt="">`;
+        const text = reader.result;
+        insertContentAtTarget(html, text);
+    };
     reader.readAsDataURL(file);
 }
 
-function insertHtml(html) {
-    activeEditor.focus();
-    document.execCommand('insertHTML', false, html);
+function insertContentAtTarget(html, text = '') {
+    if (activeTarget && activeTarget.type === 'input' && activeTarget.element?.isConnected) {
+        const input = activeTarget.element;
+        const val = input.value ?? '';
+        const start = Math.min(activeTarget.start ?? val.length, val.length);
+        const end = Math.min(activeTarget.end ?? val.length, val.length);
+        const insertion = text !== undefined && text !== null ? text : (html ? html.replace(/<[^>]+>/g, '') : '');
+
+        const before = val.slice(0, start);
+        const after = val.slice(end);
+        input.value = before + insertion + after;
+
+        const nextPos = start + insertion.length;
+        input.focus();
+        try {
+            input.setSelectionRange(nextPos, nextPos);
+        } catch {}
+
+        activeTarget.start = nextPos;
+        activeTarget.end = nextPos;
+
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+    }
+
+    const editor = (activeTarget && activeTarget.type === 'rich' && activeTarget.element?.isConnected)
+        ? activeTarget.element
+        : (getEditorForRange(savedSelectionRange) || activeEditor || $('qPrompt'));
+
+    if (!editor || !editor.isConnected) return;
+    activeEditor = editor;
+    editor.focus();
+
+    const sel = window.getSelection();
+    let range = null;
+
+    if (activeTarget && activeTarget.type === 'rich' && activeTarget.range && editor.contains(activeTarget.range.commonAncestorContainer)) {
+        range = activeTarget.range;
+    } else if (savedSelectionRange && editor.contains(savedSelectionRange.commonAncestorContainer)) {
+        range = savedSelectionRange;
+    } else if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+        range = sel.getRangeAt(0);
+    } else {
+        range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+    }
+
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    range.deleteContents();
+
+    const template = document.createElement('template');
+    template.innerHTML = html || esc(text);
+    const frag = template.content;
+    const lastNode = frag.lastChild;
+
+    range.insertNode(frag);
+
+    if (lastNode) {
+        const newRange = document.createRange();
+        newRange.setStartAfter(lastNode);
+        newRange.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+        savedSelectionRange = newRange.cloneRange();
+        activeTarget = { type: 'rich', element: editor, range: savedSelectionRange };
+    } else if (sel && sel.rangeCount > 0) {
+        savedSelectionRange = sel.getRangeAt(0).cloneRange();
+        activeTarget = { type: 'rich', element: editor, range: savedSelectionRange };
+    }
+
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function insertHtml(html, text = '') {
+    insertContentAtTarget(html, text);
 }
 
 function renderFormulaPreview() {
     const latex = $('latexInput')?.value || '';
-    $('formulaPreview').innerHTML = renderMathToken(latex);
+    const previewEl = $('formulaPreview');
+    if (!previewEl) return;
+    if (!latex.trim()) {
+        previewEl.innerHTML = '<span style="color: var(--muted); font-size: 13px;">Preview will appear here</span>';
+        return;
+    }
+    try {
+        if (window.katex) {
+            previewEl.innerHTML = window.katex.renderToString(latex, { throwOnError: false, displayMode: true });
+        } else {
+            previewEl.innerHTML = `<code>${esc(latex)}</code>`;
+        }
+    } catch {
+        previewEl.innerHTML = `<code>${esc(latex)}</code>`;
+    }
 }
 
 async function renderDiagramPreview() {
@@ -1066,27 +1495,32 @@ function createTableHtml(rows, cols) {
 
 function renderMathToken(latex) {
     try {
-        return `<span class="math-token" data-latex="${esc(latex)}">${window.katex.renderToString(latex, { throwOnError: false })}</span>`;
+        const rendered = window.katex ? window.katex.renderToString(latex, { throwOnError: false }) : esc(latex);
+        return `<span class="math-token" data-latex="${esc(latex)}" contenteditable="false">${rendered}</span>\u00A0`;
     } catch {
-        return `<code>${esc(latex)}</code>`;
+        return `<code class="math-token" data-latex="${esc(latex)}" contenteditable="false">${esc(latex)}</code>\u00A0`;
     }
 }
 
-function formulaCardsHtml() {
+function formulaCardsHtml(selectedLatex = '') {
     const favorites = getFavoriteFormulas();
     const recentLatex = JSON.parse(localStorage.getItem('qb_recent_formulas_v1') || '[]');
     const recent = recentLatex.map((latex, index) => ({ id: `recent_${index}`, category: 'Recently Used', name: latex, latex }));
     const formulas = [...getCustomFormulas(), ...recent, ...FORMULA_LIBRARY];
-    return formulas.map(f => `
-        <button class="formula-card" type="button" data-latex="${esc(f.latex)}">
-            <strong>${esc(f.name)}</strong>
-            <span>${esc(f.category)}</span>
-            <span>${esc(f.latex)}</span>
-            <span class="question-actions">
-                <span class="pill-btn" data-favorite="${esc(f.latex)}">${favorites.includes(f.latex) ? 'Favorited' : 'Favorite'}</span>
-            </span>
-        </button>
-    `).join('');
+    return formulas.map(f => {
+        const isSelected = selectedLatex && f.latex === selectedLatex;
+        const isFav = favorites.includes(f.latex);
+        return `
+            <button class="formula-card${isSelected ? ' selected' : ''}" type="button" data-latex="${esc(f.latex)}">
+                <div class="formula-card-top">
+                    <strong>${esc(f.name)}</strong>
+                    <span class="pill-btn${isFav ? ' active' : ''}" data-favorite="${esc(f.latex)}">${isFav ? '★ Favorited' : 'Favorite'}</span>
+                </div>
+                <small>${esc(f.category || 'Formula')}</small>
+                <code>${esc(f.latex)}</code>
+            </button>
+        `;
+    }).join('');
 }
 
 function getCustomFormulas() {
@@ -1102,7 +1536,7 @@ function saveCustomFormulaFromModal() {
     formulas.unshift({ id: `custom_${Date.now()}`, name, category, latex });
     localStorage.setItem('qb_custom_formulas_v1', JSON.stringify(formulas));
     toast('Custom equation saved');
-    openTool('equation');
+    openTool('equation', latex);
 }
 
 function getFavoriteFormulas() {
