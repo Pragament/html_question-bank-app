@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Question List Detail</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
+    <link rel="stylesheet" href="styles.css" />
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <header class="app-header">
+        <div>
+            <h1 id="listTitle">Question List</h1>
+            <p id="listStatus">Loading list...</p>
+        </div>
+        <div class="header-actions">
+            <span id="detailUserLabel" class="header-user-label"></span>
+            <button class="btn" id="detailLoginBtn">Google Login</button>
+            <button class="btn" id="detailLogoutBtn" hidden>Logout</button>
+            <a class="btn" href="index.html">Back to Bank</a>
+        </div>
+    </header>
+
+    <main class="detail-layout">
+        <section class="content-panel">
+            <div class="content-toolbar">
+                <div>
+                    <strong id="listQuestionCount">0 questions</strong>
+                    <span id="listOwnerLabel"></span>
+                </div>
+            </div>
+            <div id="listItems" class="question-grid"></div>
+        </section>
+    </main>
+
+    <script type="module" src="list-detail.js"></script>
+</body>
+</html>
