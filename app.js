@@ -1104,7 +1104,10 @@ function renderLists() {
             <article class="list-card">
                 <div class="list-head">
                     <h3>${esc(list.name)}</h3>
-                    <button class="pill-btn danger" data-delete-list="${list.id}">Delete</button>
+                    <div class="list-card-actions">
+                        <a class="pill-btn" href="list-detail.html?id=${encodeURIComponent(list.id)}">View</a>
+                        <button class="pill-btn danger" data-delete-list="${list.id}">Delete</button>
+                    </div>
                 </div>
                 <div class="list-items">
                     ${items.length ? items.map(q => `
