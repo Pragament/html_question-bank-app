@@ -40,19 +40,27 @@
             </label>
             <label class="field">
                 <span>Class</span>
-                <input id="classFilter" list="classList" placeholder="Any" />
+                <select id="classFilter">
+                    <option value="">Any</option>
+                </select>
             </label>
             <label class="field">
                 <span>Subject</span>
-                <input id="subjectFilter" list="subjectList" placeholder="Any" />
+                <select id="subjectFilter">
+                    <option value="">Any</option>
+                </select>
             </label>
             <label class="field">
                 <span>Chapter</span>
-                <input id="chapterFilter" placeholder="Any" />
+                <select id="chapterFilter">
+                    <option value="">Any</option>
+                </select>
             </label>
             <label class="field">
                 <span>Topic</span>
-                <input id="topicFilter" placeholder="Any" />
+                <select id="topicFilter">
+                    <option value="">Any</option>
+                </select>
             </label>
             <label class="field">
                 <span>Difficulty</span>
@@ -142,11 +150,11 @@
                 </label>
                 <label class="field">
                     <span>Chapter</span>
-                    <input id="qChapter" required />
+                    <input id="qChapter" required list="chapterList" />
                 </label>
                 <label class="field">
                     <span>Topic</span>
-                    <input id="qTopic" required />
+                    <input id="qTopic" required list="topicList" />
                 </label>
                 <label class="field">
                     <span>Difficulty</span>
@@ -310,35 +318,10 @@
         </form>
     </dialog>
 
-    <datalist id="classList">
-        <option value="I"></option>
-        <option value="II"></option>
-        <option value="III"></option>
-        <option value="IV"></option>
-        <option value="V"></option>
-        <option value="VI"></option>
-        <option value="VII"></option>
-        <option value="VIII"></option>
-        <option value="IX"></option>
-        <option value="X"></option>
-        <option value="XI"></option>
-        <option value="XII"></option>
-    </datalist>
-    <datalist id="subjectList">
-        <option value="Mathematics"></option>
-        <option value="Science"></option>
-        <option value="Physics"></option>
-        <option value="Chemistry"></option>
-        <option value="Biology"></option>
-        <option value="English"></option>
-        <option value="Hindi"></option>
-        <option value="History"></option>
-        <option value="Geography"></option>
-        <option value="Telugu"></option>
-        <option value="Economics"></option>
-        <option value="Social"></option>
-        <option value="Computer Science"></option>
-    </datalist>
+    <datalist id="classList"></datalist>
+    <datalist id="subjectList"></datalist>
+    <datalist id="chapterList"></datalist>
+    <datalist id="topicList"></datalist>
 
     <input id="hiddenImageInput" type="file" accept="image/*" hidden />
     <div id="toast" class="toast"></div>

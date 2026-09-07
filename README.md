@@ -17,6 +17,7 @@ All collections are prefixed with `qb_` to keep this app distinct from existing 
 - `qb_questions_v1` - question records.
 - `qb_reactions_v1` - one like/dislike record per user per question.
 - `qb_lists_v1` - private user-owned question lists.
+- `qb_taxonomy_v1` - class, subject, chapter, and topic hierarchy for metadata and cascading filters.
 
 See `FIRESTORE_SCHEMA.md` for the full schema.
 

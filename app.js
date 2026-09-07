@@ -11,6 +11,7 @@ import {
     arrayUnion,
     collection,
     deleteDoc,
+    deleteField,
     doc,
     getDocs,
     getFirestore,
@@ -19,7 +20,8 @@ import {
     serverTimestamp,
     setDoc,
     updateDoc,
-    where
+    where,
+    writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -35,7 +37,8 @@ const firebaseConfig = {
 const COLLECTIONS = {
     questions: 'qb_questions_v1',
     reactions: 'qb_reactions_v1',
-    lists: 'qb_lists_v1'
+    lists: 'qb_lists_v1',
+    taxonomy: 'qb_taxonomy_v1'
 };
 
 const TYPE_LABELS = {
@@ -95,6 +98,8 @@ let currentUser = null;
 let questions = [];
 let reactions = new Map();
 let lists = [];
+let taxonomy = [];
+let taxonomyById = new Map();
 let activeQuestionId = null;
 let activeEditor = null;
 let savedSelectionRange = null;
@@ -103,6 +108,7 @@ let selectedTableCell = null;
 let importRows = [];
 let unsubscribeQuestions = [];
 let unsubscribeLists = null;
+let unsubscribeTaxonomy = null;
 let toastTimer = null;
 
 function isEligibleInputField(el) {
@@ -300,6 +306,7 @@ if (window.mermaid) {
 bindEvents();
 renderPrompt();
 promptOnboardingOnRefresh();
+listenForTaxonomy();
 
 onAuthStateChanged(auth, (user) => {
     currentUser = user;
@@ -362,6 +369,12 @@ function bindEvents() {
     });
     filterIds.forEach(id => $(id).addEventListener('input', render));
     filterIds.forEach(id => $(id).addEventListener('change', render));
+    ['classFilter', 'subjectFilter', 'chapterFilter'].forEach(id => {
+        $(id).addEventListener('change', () => {
+            renderMetadataFilterOptions();
+            render();
+        });
+    });
     els.listFilter.addEventListener('change', render);
 
     document.querySelectorAll('.tab').forEach(tab => {
@@ -634,6 +647,7 @@ function listenForQuestions() {
         });
         els.syncStatus.textContent = `Firestore: ${COLLECTIONS.questions}`;
         await loadReactions();
+        renderMetadataFilterOptions();
         render();
     };
     const base = collection(db, COLLECTIONS.questions);
@@ -681,6 +695,16 @@ function listenForLists() {
     });
 }
 
+function listenForTaxonomy() {
+    if (unsubscribeTaxonomy) unsubscribeTaxonomy();
+    unsubscribeTaxonomy = onSnapshot(collection(db, COLLECTIONS.taxonomy), (snapshot) => {
+        taxonomy = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort(sortTaxonomyNodes);
+        taxonomyById = new Map(taxonomy.map(node => [node.id, node]));
+        renderMetadataFilterOptions();
+        render();
+    });
+}
+
 async function loadReactions() {
     reactions = new Map();
     if (!questions.length) return;
@@ -719,15 +743,16 @@ function getFilteredQuestions() {
             .flatMap(list => list.questionIds || [])
     ) : null;
     return questions.filter(q => {
+        const path = normalizeQuestionTaxonomy(q);
         const reaction = reactions.get(q.id) || { likes: 0, dislikes: 0 };
         const isMine = currentUser && q.authorUid === currentUser.uid;
         const visibleByStatus = q.status === 'published' || (isMine && filters.visibilityFilter !== 'published');
         const visibilityOk = filters.visibilityFilter === 'mine' ? isMine : visibleByStatus;
         if (!visibilityOk) return false;
-        if (filters.classFilter && !same(q.className, filters.classFilter)) return false;
-        if (filters.subjectFilter && !same(q.subject, filters.subjectFilter)) return false;
-        if (filters.chapterFilter && !contains(q.chapter, filters.chapterFilter)) return false;
-        if (filters.topicFilter && !contains(q.topic, filters.topicFilter)) return false;
+        if (filters.classFilter && path?.classId !== filters.classFilter) return false;
+        if (filters.subjectFilter && path?.subjectId !== filters.subjectFilter) return false;
+        if (filters.chapterFilter && path?.chapterId !== filters.chapterFilter) return false;
+        if (filters.topicFilter && path?.topicId !== filters.topicFilter) return false;
         if (filters.difficultyFilter && q.difficulty !== filters.difficultyFilter) return false;
         if (filters.typeFilter && q.type !== filters.typeFilter) return false;
         if (minLikes !== null && reaction.likes < minLikes) return false;
@@ -737,10 +762,10 @@ function getFilteredQuestions() {
         return [
             q.promptHtml,
             answerText(q),
-            q.className,
-            q.subject,
-            q.chapter,
-            q.topic,
+            taxonomyLabel(q, 'class'),
+            taxonomyLabel(q, 'subject'),
+            taxonomyLabel(q, 'chapter'),
+            taxonomyLabel(q, 'topic'),
             q.authorName
         ].some(value => stripHtml(value).toLowerCase().includes(queryText));
     });
@@ -754,6 +779,163 @@ function parseOptionalNumber(value) {
 
 function getSelectedListIds() {
     return Array.from(els.listFilter.selectedOptions).map(option => option.value).filter(Boolean);
+}
+
+function renderMetadataFilterOptions() {
+    renderSelectOptions('classFilter', taxonomyOptions('class'));
+    renderSelectOptions('subjectFilter', taxonomyOptions('subject', $('classFilter').value));
+    renderSelectOptions('chapterFilter', taxonomyOptions('chapter', $('subjectFilter').value));
+    renderSelectOptions('topicFilter', taxonomyOptions('topic', $('chapterFilter').value));
+    renderDatalistOptions('classList', taxonomyLabels('class'));
+    renderDatalistOptions('subjectList', taxonomyLabels('subject'));
+    renderDatalistOptions('chapterList', taxonomyLabels('chapter'));
+    renderDatalistOptions('topicList', taxonomyLabels('topic'));
+}
+
+function taxonomyOptions(type, parentId = '') {
+    const options = taxonomy
+        .filter(node => node.type === type && (!parentId || node.parentId === parentId))
+        .map(node => ({ value: node.id, label: node.label }));
+    const legacyOptions = legacyTaxonomyOptions(type, parentId);
+    const byValue = new Map();
+    [...options, ...legacyOptions].forEach(option => byValue.set(option.value, option));
+    return Array.from(byValue.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+function legacyTaxonomyOptions(type, parentId = '') {
+    const legacy = questions.map(q => normalizeQuestionTaxonomy(q)).filter(Boolean);
+    if (type === 'class') return uniqueOptions(legacy.map(path => ({ value: path.classId, label: path.classLabel })));
+    if (type === 'subject') {
+        return uniqueOptions(legacy
+            .filter(path => !parentId || path.classId === parentId)
+            .map(path => ({ value: path.subjectId, label: path.subjectLabel })));
+    }
+    if (type === 'chapter') {
+        return uniqueOptions(legacy
+            .filter(path => !parentId || path.subjectId === parentId)
+            .map(path => ({ value: path.chapterId, label: path.chapterLabel })));
+    }
+    return uniqueOptions(legacy
+        .filter(path => !parentId || path.chapterId === parentId)
+        .map(path => ({ value: path.topicId, label: path.topicLabel })));
+}
+
+function uniqueOptions(options) {
+    return Array.from(new Map(options.filter(option => option.value && option.label).map(option => [option.value, option])).values());
+}
+
+function taxonomyLabels(type) {
+    return Array.from(new Set([
+        ...taxonomy.filter(node => node.type === type).map(node => node.label),
+        ...questions.map(q => {
+            const path = normalizeQuestionTaxonomy(q);
+            if (!path) return '';
+            if (type === 'class') return path.classLabel;
+            if (type === 'subject') return path.subjectLabel;
+            if (type === 'chapter') return path.chapterLabel;
+            return path.topicLabel;
+        })
+    ].map(value => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+function renderSelectOptions(id, options) {
+    const select = $(id);
+    const selected = select.value;
+    select.innerHTML = `<option value="">Any</option>${options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('')}`;
+    select.value = options.some(option => option.value === selected) ? selected : '';
+}
+
+function renderDatalistOptions(id, values) {
+    const datalist = $(id);
+    if (!datalist) return;
+    datalist.innerHTML = values.map(value => `<option value="${esc(value)}"></option>`).join('');
+}
+
+function normalizeQuestionTaxonomy(q) {
+    const classLabel = taxonomyById.get(q.classId)?.label || q.className || '';
+    const subjectLabel = taxonomyById.get(q.subjectId)?.label || q.subject || '';
+    const chapterLabel = taxonomyById.get(q.chapterId)?.label || q.chapter || '';
+    const topicLabel = taxonomyById.get(q.topicId)?.label || q.topic || '';
+    if (!classLabel || !subjectLabel || !chapterLabel || !topicLabel) return null;
+    const classId = q.classId || taxonomyId('class', classLabel);
+    const subjectId = q.subjectId || taxonomyId('subject', subjectLabel, classId);
+    const chapterId = q.chapterId || taxonomyId('chapter', chapterLabel, subjectId);
+    const topicId = q.topicId || taxonomyId('topic', topicLabel, chapterId);
+    return { classId, subjectId, chapterId, topicId, classLabel, subjectLabel, chapterLabel, topicLabel };
+}
+
+function taxonomyLabel(q, type) {
+    const path = normalizeQuestionTaxonomy(q);
+    if (!path) return '';
+    if (type === 'class') return path.classLabel;
+    if (type === 'subject') return path.subjectLabel;
+    if (type === 'chapter') return path.chapterLabel;
+    return path.topicLabel;
+}
+
+function buildTaxonomyPath(labels) {
+    const classLabel = normalizeTaxonomyLabel(labels.className);
+    const subjectLabel = normalizeTaxonomyLabel(labels.subject);
+    const chapterLabel = normalizeTaxonomyLabel(labels.chapter);
+    const topicLabel = normalizeTaxonomyLabel(labels.topic);
+    const classId = taxonomyId('class', classLabel);
+    const subjectId = taxonomyId('subject', subjectLabel, classId);
+    const chapterId = taxonomyId('chapter', chapterLabel, subjectId);
+    const topicId = taxonomyId('topic', topicLabel, chapterId);
+    return {
+        ids: { classId, subjectId, chapterId, topicId },
+        nodes: [
+            { id: classId, type: 'class', label: classLabel, parentId: '', classId },
+            { id: subjectId, type: 'subject', label: subjectLabel, parentId: classId, classId, subjectId },
+            { id: chapterId, type: 'chapter', label: chapterLabel, parentId: subjectId, classId, subjectId, chapterId },
+            { id: topicId, type: 'topic', label: topicLabel, parentId: chapterId, classId, subjectId, chapterId, topicId }
+        ]
+    };
+}
+
+async function ensureTaxonomyPath(labels) {
+    const path = buildTaxonomyPath(labels);
+    const batch = writeBatch(db);
+    path.nodes.forEach(node => {
+        batch.set(doc(db, COLLECTIONS.taxonomy, node.id), {
+            ...node,
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    });
+    await batch.commit();
+    path.nodes.forEach(node => taxonomyById.set(node.id, node));
+    taxonomy = Array.from(taxonomyById.values()).sort(sortTaxonomyNodes);
+    return path.ids;
+}
+
+function taxonomyPathCacheKey(labels) {
+    return [
+        labels.className,
+        labels.subject,
+        labels.chapter,
+        labels.topic
+    ].map(normalizeTaxonomyLabel).join('>');
+}
+
+function taxonomyId(type, label, parentId = '') {
+    const prefix = { class: 'class', subject: 'subject', chapter: 'chapter', topic: 'topic' }[type] || type;
+    return `${parentId ? `${parentId}__` : ''}${prefix}_${slugify(label)}`;
+}
+
+function normalizeTaxonomyLabel(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function slugify(value) {
+    const slug = normalizeTaxonomyLabel(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return slug || 'untitled';
+}
+
+function sortTaxonomyNodes(a, b) {
+    return (a.label || '').localeCompare(b.label || '', undefined, { numeric: true, sensitivity: 'base' });
 }
 
 function questionCard(q) {
@@ -773,10 +955,10 @@ function questionCard(q) {
             </div>
             <div class="rich-content">${sanitizeRich(q.promptHtml || '')}</div>
             <div class="question-meta">
-                <span>${esc(q.className || 'Class')}</span>
-                <span>${esc(q.subject || 'Subject')}</span>
-                <span>${esc(q.chapter || 'Chapter')}</span>
-                <span>${esc(q.topic || 'Topic')}</span>
+                <span>${esc(taxonomyLabel(q, 'class') || 'Class')}</span>
+                <span>${esc(taxonomyLabel(q, 'subject') || 'Subject')}</span>
+                <span>${esc(taxonomyLabel(q, 'chapter') || 'Chapter')}</span>
+                <span>${esc(taxonomyLabel(q, 'topic') || 'Topic')}</span>
                 <span>${esc(q.difficulty || 'Medium')}</span>
             </div>
             <div class="card-answer"><strong>Answer:</strong> ${answerHtml(q)}</div>
@@ -838,10 +1020,10 @@ function openQuestionDialog(question = null) {
     activeQuestionId = question?.id || null;
     els.questionDialogTitle.textContent = activeQuestionId ? 'Edit Question' : 'New Question';
     $('archiveQuestionBtn').hidden = !activeQuestionId;
-    $('qClass').value = question?.className || '';
-    $('qSubject').value = question?.subject || '';
-    $('qChapter').value = question?.chapter || '';
-    $('qTopic').value = question?.topic || '';
+    $('qClass').value = question ? taxonomyLabel(question, 'class') : '';
+    $('qSubject').value = question ? taxonomyLabel(question, 'subject') : '';
+    $('qChapter').value = question ? taxonomyLabel(question, 'chapter') : '';
+    $('qTopic').value = question ? taxonomyLabel(question, 'topic') : '';
     $('qDifficulty').value = question?.difficulty || 'Medium';
     $('qType').value = question?.type || 'mcq';
     $('qStatus').value = question?.status || 'published';
@@ -970,12 +1152,14 @@ async function saveQuestion(event) {
     const type = $('qType').value;
     const existing = activeQuestionId ? questions.find(q => q.id === activeQuestionId) : null;
     if (existing && existing.authorUid !== currentUser.uid) return toast('Only the author can edit this question');
-    const payload = {
-        type,
+    const taxonomyLabels = {
         className: $('qClass').value.trim(),
         subject: $('qSubject').value.trim(),
         chapter: $('qChapter').value.trim(),
-        topic: $('qTopic').value.trim(),
+        topic: $('qTopic').value.trim()
+    };
+    const payload = {
+        type,
         difficulty: $('qDifficulty').value,
         status: $('qStatus').value,
         promptHtml: sanitizeRich($('qPrompt').innerHTML),
@@ -1005,11 +1189,18 @@ async function saveQuestion(event) {
     } else {
         payload.shortAnswerHtml = sanitizeRich($('shortAnswer').innerHTML);
     }
-    if (!payload.className || !payload.subject || !payload.chapter || !payload.topic || !stripHtml(payload.promptHtml)) {
+    if (!taxonomyLabels.className || !taxonomyLabels.subject || !taxonomyLabels.chapter || !taxonomyLabels.topic || !stripHtml(payload.promptHtml)) {
         return toast('Class, subject, chapter, topic, and question are required');
     }
+    Object.assign(payload, await ensureTaxonomyPath(taxonomyLabels));
     if (activeQuestionId) {
-        await updateDoc(doc(db, COLLECTIONS.questions, activeQuestionId), payload);
+        await updateDoc(doc(db, COLLECTIONS.questions, activeQuestionId), {
+            ...payload,
+            className: deleteField(),
+            subject: deleteField(),
+            chapter: deleteField(),
+            topic: deleteField()
+        });
         toast('Question updated');
     } else {
         payload.createdAt = serverTimestamp();
@@ -1584,9 +1775,17 @@ async function confirmImport() {
     if (!currentUser) return toast('Sign in to import');
     const selectedListId = els.importListSelect.value;
     const importedQuestionIds = [];
+    const taxonomyPathCache = new Map();
     for (const row of importRows) {
+        const { taxonomyLabels, ...question } = row;
+        const cacheKey = taxonomyPathCacheKey(taxonomyLabels);
+        if (!taxonomyPathCache.has(cacheKey)) {
+            taxonomyPathCache.set(cacheKey, ensureTaxonomyPath(taxonomyLabels));
+        }
+        const taxonomyIds = await taxonomyPathCache.get(cacheKey);
         const createdQuestion = await addDoc(collection(db, COLLECTIONS.questions), {
-            ...row,
+            ...question,
+            ...taxonomyIds,
             authorUid: currentUser.uid,
             authorName: currentUser.displayName || currentUser.email || 'Teacher',
             status: 'published',
@@ -1641,12 +1840,15 @@ function parseCsvQuestions(text) {
         if (!cells.some(Boolean)) return;
         const row = Object.fromEntries(headers.map((h, i) => [h, cells[i] || '']));
         const type = normalizeType(row.type || 'mcq');
-        const question = {
-            type,
+        const taxonomyLabels = {
             className: row.class || '',
             subject: row.subject || '',
             chapter: row.chapter || '',
-            topic: row.topic || '',
+            topic: row.topic || ''
+        };
+        const question = {
+            type,
+            taxonomyLabels,
             difficulty: row.difficulty || 'Medium',
             promptHtml: esc(row.question || ''),
             options: [],
@@ -1655,7 +1857,7 @@ function parseCsvQuestions(text) {
             shortAnswerHtml: '',
             translations: {}
         };
-        if (!question.className || !question.subject || !question.chapter || !question.topic || !row.question) {
+        if (!taxonomyLabels.className || !taxonomyLabels.subject || !taxonomyLabels.chapter || !taxonomyLabels.topic || !row.question) {
             errors.push(`Row ${index + 2}: missing class, subject, chapter, topic, or question`);
             return;
         }
@@ -1782,10 +1984,10 @@ function exportFilteredCsv() {
     getFilteredQuestions().forEach(q => {
         const base = [
             q.type,
-            q.className,
-            q.subject,
-            q.chapter,
-            q.topic,
+            taxonomyLabel(q, 'class'),
+            taxonomyLabel(q, 'subject'),
+            taxonomyLabel(q, 'chapter'),
+            taxonomyLabel(q, 'topic'),
             q.difficulty,
             stripHtml(q.promptHtml),
             stripHtml(q.options?.[0]?.html),

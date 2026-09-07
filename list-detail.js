@@ -29,7 +29,8 @@ const firebaseConfig = {
 
 const COLLECTIONS = {
     questions: 'qb_questions_v1',
-    lists: 'qb_lists_v1'
+    lists: 'qb_lists_v1',
+    taxonomy: 'qb_taxonomy_v1'
 };
 
 const TYPE_LABELS = {
@@ -47,6 +48,7 @@ const db = getFirestore(app);
 
 const $ = (id) => document.getElementById(id);
 const listId = new URLSearchParams(window.location.search).get('id');
+let taxonomyById = new Map();
 
 if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
@@ -83,6 +85,7 @@ async function loadListDetail() {
         }
 
         const list = { id: listSnap.id, ...listSnap.data() };
+        await loadTaxonomy();
         const questions = await loadQuestions(list.questionIds || []);
         renderList(list, questions);
     } catch (error) {
@@ -98,6 +101,11 @@ async function loadQuestions(questionIds) {
         snap.forEach(docSnap => byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() }));
     }
     return questionIds.map(id => byId.get(id)).filter(Boolean);
+}
+
+async function loadTaxonomy() {
+    const snap = await withTimeout(getDocs(collection(db, COLLECTIONS.taxonomy)), 12000);
+    taxonomyById = new Map(snap.docs.map(docSnap => [docSnap.id, { id: docSnap.id, ...docSnap.data() }]));
 }
 
 function withTimeout(promise, ms) {
@@ -134,16 +142,23 @@ function questionCard(q) {
             </div>
             <div class="rich-content">${sanitizeRich(q.promptHtml || '')}</div>
             <div class="question-meta">
-                <span>${esc(q.className || 'Class')}</span>
-                <span>${esc(q.subject || 'Subject')}</span>
-                <span>${esc(q.chapter || 'Chapter')}</span>
-                <span>${esc(q.topic || 'Topic')}</span>
+                <span>${esc(taxonomyLabel(q, 'class') || 'Class')}</span>
+                <span>${esc(taxonomyLabel(q, 'subject') || 'Subject')}</span>
+                <span>${esc(taxonomyLabel(q, 'chapter') || 'Chapter')}</span>
+                <span>${esc(taxonomyLabel(q, 'topic') || 'Topic')}</span>
                 <span>${esc(q.difficulty || 'Medium')}</span>
             </div>
             <div class="card-answer"><strong>Answer:</strong> ${answerHtml(q)}</div>
             ${translationSummary(q)}
         </article>
     `;
+}
+
+function taxonomyLabel(q, type) {
+    if (type === 'class') return taxonomyById.get(q.classId)?.label || q.className || '';
+    if (type === 'subject') return taxonomyById.get(q.subjectId)?.label || q.subject || '';
+    if (type === 'chapter') return taxonomyById.get(q.chapterId)?.label || q.chapter || '';
+    return taxonomyById.get(q.topicId)?.label || q.topic || '';
 }
 
 function answerHtml(q) {

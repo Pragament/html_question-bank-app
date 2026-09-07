@@ -24,10 +24,10 @@ Document shape:
 ```js
 {
   type: 'mcq' | 'true_false' | 'fib' | 'short_answer',
-  className: 'IX',
-  subject: 'Mathematics',
-  chapter: 'Algebra',
-  topic: 'Polynomials',
+  classId: 'class_ix',
+  subjectId: 'class_ix__subject_mathematics',
+  chapterId: 'class_ix__subject_mathematics__chapter_algebra',
+  topicId: 'class_ix__subject_mathematics__chapter_algebra__topic_polynomials',
   difficulty: 'Easy' | 'Medium' | 'Hard' | 'Very Hard',
   status: 'published' | 'draft' | 'archived',
 
@@ -74,7 +74,33 @@ Notes:
 
 - `promptHtml`, `options[].html`, and `shortAnswerHtml` can contain rich editor HTML for bold, italic, code blocks, inline images, equations, tables, and Mermaid diagram placeholders/rendered content.
 - Inline images are stored inside the document as data URLs. Keep images small because Firestore documents have a 1 MiB size limit.
-- Client-side filtering uses `className`, `subject`, `chapter`, `topic`, `difficulty`, and `type`.
+- New and edited questions store taxonomy reference IDs for class, subject, chapter, and topic. Legacy label fields are still read by the client as a fallback during migration.
+- Client-side filtering uses taxonomy IDs, `difficulty`, and `type`.
+
+### `qb_taxonomy_v1`
+
+Stores hierarchical class, subject, chapter, and topic terms. The client keeps one live snapshot of this collection and cascades filter dropdowns locally, avoiding a Firestore query for every parent selection.
+
+Document shape:
+
+```js
+{
+  type: 'class' | 'subject' | 'chapter' | 'topic',
+  label: 'Polynomials',
+  parentId: 'class_ix__subject_mathematics__chapter_algebra',
+  classId: 'class_ix',
+  subjectId: 'class_ix__subject_mathematics',
+  chapterId: 'class_ix__subject_mathematics__chapter_algebra',
+  topicId: 'class_ix__subject_mathematics__chapter_algebra__topic_polynomials',
+  updatedAt: Timestamp
+}
+```
+
+Notes:
+
+- Taxonomy document IDs are deterministic from the label and parent path.
+- Saving or importing a question upserts the four taxonomy documents for its class, subject, chapter, and topic path.
+- Class documents use an empty `parentId`.
 
 ### `qb_reactions_v1`
 
@@ -162,6 +188,8 @@ Current app subscriptions:
   - `qb_questions_v1 where status == "published"`
   - `qb_questions_v1 where authorUid == currentUser.uid`
   - `qb_lists_v1 where ownerUid == currentUser.uid`
+- Taxonomy:
+  - `qb_taxonomy_v1`
 - Reactions:
   - `qb_reactions_v1 where questionId in [visible question ids]`
 
@@ -171,7 +199,7 @@ The app sorts question and list results by `updatedAt` on the client.
 
 The current implementation avoids compound ordered queries for easier setup. If you later move more filtering into Firestore, useful composite indexes may include:
 
-- `qb_questions_v1`: `status`, `className`, `subject`, `updatedAt desc`
+- `qb_questions_v1`: `status`, `classId`, `subjectId`, `updatedAt desc`
 - `qb_questions_v1`: `status`, `type`, `difficulty`, `updatedAt desc`
 - `qb_questions_v1`: `authorUid`, `updatedAt desc`
 - `qb_lists_v1`: `ownerUid`, `updatedAt desc`

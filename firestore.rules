@@ -34,6 +34,16 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid;
     }
 
+    match /qb_taxonomy_v1/{taxonomyId} {
+      allow read: if true;
+
+      allow create, update: if signedIn()
+        && request.resource.data.type in ['class', 'subject', 'chapter', 'topic']
+        && request.resource.data.label is string;
+
+      allow delete: if false;
+    }
+
     match /qb_lists_v1/{listId} {
       allow read: if signedIn() && resource.data.ownerUid == request.auth.uid;
 
