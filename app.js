@@ -10,7 +10,6 @@ import {
     addDoc,
     arrayUnion,
     collection,
-    deleteDoc,
     deleteField,
     doc,
     getDocs,
@@ -276,6 +275,7 @@ const els = {
     exportBtn: $('exportBtn'),
     importBtn: $('importBtn'),
     templatesBtn: $('templatesBtn'),
+    listStatusFilter: $('listStatusFilter'),
     listFilter: $('listFilter'),
     questionGrid: $('questionGrid'),
     questionCount: $('questionCount'),
@@ -310,8 +310,7 @@ listenForTaxonomy();
 
 onAuthStateChanged(auth, (user) => {
     currentUser = user;
-    els.loginBtn.hidden = !!user;
-    els.logoutBtn.hidden = !user;
+    updateHeaderAuthActions();
     els.activeUserLabel.textContent = user ? user.displayName || user.email || 'Signed in' : 'Viewing published questions';
     $('visibilityFilter').value = user ? 'all' : 'published';
     listenForQuestions();
@@ -361,6 +360,7 @@ function bindEvents() {
     $('downloadTemplateBtn').addEventListener('click', downloadTemplateCsv);
     $('csvFileInput').addEventListener('change', loadCsvFile);
     $('createListBtn').addEventListener('click', createList);
+    els.listStatusFilter.addEventListener('change', renderLists);
     $('clearFiltersBtn').addEventListener('click', clearFilters);
 
     ['promptSubject', 'promptClass', 'promptCount', 'promptDifficulty', 'promptTopic'].forEach(id => {
@@ -482,6 +482,16 @@ function bindEvents() {
             openTool(toolbarButton.dataset.insert);
         }
     });
+}
+
+function updateHeaderAuthActions() {
+    const signedIn = !!currentUser;
+    els.loginBtn.hidden = signedIn;
+    els.logoutBtn.hidden = !signedIn;
+    els.templatesBtn.hidden = !signedIn;
+    els.importBtn.hidden = !signedIn;
+    els.exportBtn.hidden = !signedIn;
+    els.newQuestionBtn.hidden = !signedIn;
 }
 
 function startOnboarding() {
@@ -746,8 +756,13 @@ function getFilteredQuestions() {
         const path = normalizeQuestionTaxonomy(q);
         const reaction = reactions.get(q.id) || { likes: 0, dislikes: 0 };
         const isMine = currentUser && q.authorUid === currentUser.uid;
-        const visibleByStatus = q.status === 'published' || (isMine && filters.visibilityFilter !== 'published');
-        const visibilityOk = filters.visibilityFilter === 'mine' ? isMine : visibleByStatus;
+        const isArchived = q.status === 'archived';
+        const visibleByStatus = q.status === 'published' || (isMine && !isArchived && filters.visibilityFilter === 'all');
+        const visibilityOk = filters.visibilityFilter === 'mine'
+            ? isMine && !isArchived
+            : filters.visibilityFilter === 'archived'
+                ? isMine && isArchived
+                : visibleByStatus;
         if (!visibilityOk) return false;
         if (filters.classFilter && path?.classId !== filters.classFilter) return false;
         if (filters.subjectFilter && path?.subjectId !== filters.subjectFilter) return false;
@@ -941,11 +956,17 @@ function sortTaxonomyNodes(a, b) {
 function questionCard(q) {
     const reaction = reactions.get(q.id) || { likes: 0, dislikes: 0, mine: null };
     const mine = currentUser && q.authorUid === currentUser.uid;
-    const listButtons = currentUser && lists.length
+    const isArchived = q.status === 'archived';
+    const availableLists = activeLists();
+    const listButtons = currentUser && availableLists.length
         ? `<select data-add-to-list="${q.id}">
                 <option value="">Add to list</option>
-                ${lists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')}
+                ${availableLists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')}
            </select>`
+        : '';
+    const ownerActions = mine
+        ? `<button class="pill-btn" data-edit="${q.id}">Edit</button>
+           <button class="pill-btn ${isArchived ? '' : 'danger'}" data-${isArchived ? 'unarchive' : 'archive'}="${q.id}">${isArchived ? 'Unarchive' : 'Archive'}</button>`
         : '';
     return `
         <article class="question-card">
@@ -967,10 +988,10 @@ function questionCard(q) {
                 <div class="reaction-row">
                     <button class="pill-btn" data-react="like" data-id="${q.id}" ${!currentUser ? 'disabled' : ''}>Like ${reaction.likes}</button>
                     <button class="pill-btn" data-react="dislike" data-id="${q.id}" ${!currentUser ? 'disabled' : ''}>Dislike ${reaction.dislikes}</button>
-                    ${listButtons}
+                    ${isArchived ? '' : listButtons}
                 </div>
                 <span class="spacer"></span>
-                ${mine ? `<button class="pill-btn" data-edit="${q.id}">Edit</button><button class="pill-btn danger" data-archive="${q.id}">Archive</button>` : ''}
+                ${ownerActions}
             </div>
         </article>
     `;
@@ -1005,6 +1026,7 @@ function bindQuestionCardActions() {
         openQuestionDialog(questions.find(q => q.id === btn.dataset.edit));
     }));
     document.querySelectorAll('[data-archive]').forEach(btn => btn.addEventListener('click', () => archiveQuestion(btn.dataset.archive)));
+    document.querySelectorAll('[data-unarchive]').forEach(btn => btn.addEventListener('click', () => unarchiveQuestion(btn.dataset.unarchive)));
     document.querySelectorAll('[data-react]').forEach(btn => btn.addEventListener('click', () => setReaction(btn.dataset.id, btn.dataset.react)));
     document.querySelectorAll('[data-add-to-list]').forEach(select => select.addEventListener('change', () => {
         if (select.value) addQuestionToList(select.value, select.dataset.addToList);
@@ -1020,13 +1042,15 @@ function openQuestionDialog(question = null) {
     activeQuestionId = question?.id || null;
     els.questionDialogTitle.textContent = activeQuestionId ? 'Edit Question' : 'New Question';
     $('archiveQuestionBtn').hidden = !activeQuestionId;
+    $('archiveQuestionBtn').textContent = question?.status === 'archived' ? 'Unarchive' : 'Archive';
+    $('archiveQuestionBtn').classList.toggle('danger', question?.status !== 'archived');
     $('qClass').value = question ? taxonomyLabel(question, 'class') : '';
     $('qSubject').value = question ? taxonomyLabel(question, 'subject') : '';
     $('qChapter').value = question ? taxonomyLabel(question, 'chapter') : '';
     $('qTopic').value = question ? taxonomyLabel(question, 'topic') : '';
     $('qDifficulty').value = question?.difficulty || 'Medium';
     $('qType').value = question?.type || 'mcq';
-    $('qStatus').value = question?.status || 'published';
+    $('qStatus').value = question?.status === 'archived' ? question.previousStatus || 'published' : question?.status || 'published';
     $('qPrompt').innerHTML = sanitizeRich(question?.promptHtml || '');
     renderAnswerEditor(question);
     renderTranslations(question?.translations || {});
@@ -1224,15 +1248,48 @@ function collectTranslations() {
 }
 
 async function archiveActiveQuestion() {
-    if (activeQuestionId) await archiveQuestion(activeQuestionId);
-    closeQuestionDialog();
+    const question = questions.find(q => q.id === activeQuestionId);
+    let changed = false;
+    if (question?.status === 'archived') {
+        changed = await unarchiveQuestion(activeQuestionId);
+    } else if (activeQuestionId) {
+        changed = await archiveQuestion(activeQuestionId);
+    }
+    if (changed) closeQuestionDialog();
 }
 
 async function archiveQuestion(id) {
     const question = questions.find(q => q.id === id);
-    if (!currentUser || !question || question.authorUid !== currentUser.uid) return toast('Only the author can archive');
-    await updateDoc(doc(db, COLLECTIONS.questions, id), { status: 'archived', updatedAt: serverTimestamp(), archivedAt: serverTimestamp() });
+    if (!currentUser || !question || question.authorUid !== currentUser.uid) {
+        toast('Only the author can archive');
+        return false;
+    }
+    if (!window.confirm('Archive this question?')) return false;
+    await updateDoc(doc(db, COLLECTIONS.questions, id), {
+        status: 'archived',
+        previousStatus: question.status === 'archived' ? question.previousStatus || 'published' : question.status || 'published',
+        updatedAt: serverTimestamp(),
+        archivedAt: serverTimestamp()
+    });
     toast('Question archived');
+    return true;
+}
+
+async function unarchiveQuestion(id) {
+    const question = questions.find(q => q.id === id);
+    if (!currentUser || !question || question.authorUid !== currentUser.uid) {
+        toast('Only the author can unarchive');
+        return false;
+    }
+    if (!window.confirm('Unarchive this question?')) return false;
+    await updateDoc(doc(db, COLLECTIONS.questions, id), {
+        status: question.previousStatus && question.previousStatus !== 'archived' ? question.previousStatus : 'published',
+        previousStatus: deleteField(),
+        archivedAt: deleteField(),
+        updatedAt: serverTimestamp()
+    });
+    toast('Question unarchived');
+    return true;
 }
 
 async function setReaction(questionId, value) {
@@ -1255,6 +1312,7 @@ async function createList() {
     await addDoc(collection(db, COLLECTIONS.lists), {
         name,
         ownerUid: currentUser.uid,
+        status: 'active',
         questionIds: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -1280,8 +1338,30 @@ async function removeQuestionFromList(listId, questionId) {
     });
 }
 
-async function deleteList(listId) {
-    await deleteDoc(doc(db, COLLECTIONS.lists, listId));
+async function archiveList(listId) {
+    const list = lists.find(l => l.id === listId);
+    if (!currentUser || !list || list.ownerUid !== currentUser.uid) return toast('Only the owner can archive this list');
+    if (!window.confirm('Archive this list?')) return;
+    await updateDoc(doc(db, COLLECTIONS.lists, listId), {
+        status: 'archived',
+        previousStatus: list.status === 'archived' ? list.previousStatus || 'active' : list.status || 'active',
+        archivedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    });
+    toast('List archived');
+}
+
+async function unarchiveList(listId) {
+    const list = lists.find(l => l.id === listId);
+    if (!currentUser || !list || list.ownerUid !== currentUser.uid) return toast('Only the owner can unarchive this list');
+    if (!window.confirm('Unarchive this list?')) return;
+    await updateDoc(doc(db, COLLECTIONS.lists, listId), {
+        status: list.previousStatus && list.previousStatus !== 'archived' ? list.previousStatus : 'active',
+        previousStatus: deleteField(),
+        archivedAt: deleteField(),
+        updatedAt: serverTimestamp()
+    });
+    toast('List unarchived');
 }
 
 function renderLists() {
@@ -1289,30 +1369,47 @@ function renderLists() {
         els.listsContainer.innerHTML = `<div class="empty-card">Sign in to manage lists.</div>`;
         return;
     }
-    els.listsContainer.innerHTML = lists.length ? lists.map(list => {
+    const visibleLists = getVisibleLists();
+    els.listsContainer.innerHTML = visibleLists.length ? visibleLists.map(list => {
         const items = (list.questionIds || []).map(id => questions.find(q => q.id === id)).filter(Boolean);
+        const isArchived = list.status === 'archived';
         return `
             <article class="list-card">
                 <div class="list-head">
-                    <h3>${esc(list.name)}</h3>
+                    <h3>${esc(list.name)}${isArchived ? ' <span class="status-chip archived">archived</span>' : ''}</h3>
                     <div class="list-card-actions">
                         <a class="pill-btn" href="list-detail.html?id=${encodeURIComponent(list.id)}">View</a>
-                        <button class="pill-btn danger" data-delete-list="${list.id}">Delete</button>
+                        <button class="pill-btn ${isArchived ? '' : 'danger'}" data-${isArchived ? 'unarchive-list' : 'archive-list'}="${list.id}">${isArchived ? 'Unarchive' : 'Archive'}</button>
                     </div>
                 </div>
                 <div class="list-items">
                     ${items.length ? items.map(q => `
                         <div class="mini-question">
                             <span>${esc(stripHtml(q.promptHtml).slice(0, 120))}</span>
-                            <button class="pill-btn danger" data-remove-from-list="${list.id}" data-question="${q.id}">Remove</button>
+                            ${isArchived ? '' : `<button class="pill-btn danger" data-remove-from-list="${list.id}" data-question="${q.id}">Remove</button>`}
                         </div>
                     `).join('') : '<div class="empty-card">No questions in this list.</div>'}
                 </div>
             </article>
         `;
     }).join('') : `<div class="empty-card">No lists yet.</div>`;
-    document.querySelectorAll('[data-delete-list]').forEach(btn => btn.addEventListener('click', () => deleteList(btn.dataset.deleteList)));
+    document.querySelectorAll('[data-archive-list]').forEach(btn => btn.addEventListener('click', () => archiveList(btn.dataset.archiveList)));
+    document.querySelectorAll('[data-unarchive-list]').forEach(btn => btn.addEventListener('click', () => unarchiveList(btn.dataset.unarchiveList)));
     document.querySelectorAll('[data-remove-from-list]').forEach(btn => btn.addEventListener('click', () => removeQuestionFromList(btn.dataset.removeFromList, btn.dataset.question)));
+}
+
+function getVisibleLists() {
+    const status = els.listStatusFilter.value;
+    return lists.filter(list => {
+        const isArchived = list.status === 'archived';
+        if (status === 'archived') return isArchived;
+        if (status === 'all') return true;
+        return !isArchived;
+    });
+}
+
+function activeLists() {
+    return lists.filter(list => list.status !== 'archived');
 }
 
 function switchView(view) {
@@ -1811,12 +1908,13 @@ async function confirmImport() {
 function renderImportListOptions() {
     if (!els.importListSelect) return;
     const selected = els.importListSelect.value;
+    const availableLists = activeLists();
     els.importListSelect.innerHTML = `
         <option value="">Do not add to a list</option>
-        ${lists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')}
+        ${availableLists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')}
     `;
-    els.importListSelect.value = lists.some(list => list.id === selected) ? selected : '';
-    els.importListSelect.disabled = !currentUser || !lists.length;
+    els.importListSelect.value = availableLists.some(list => list.id === selected) ? selected : '';
+    els.importListSelect.disabled = !currentUser || !availableLists.length;
 }
 
 function renderListFilterOptions() {

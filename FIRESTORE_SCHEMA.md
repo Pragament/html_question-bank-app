@@ -147,7 +147,8 @@ Read access:
 
 Write access:
 
-- Only the list owner can create, update, or delete the list.
+- Only the list owner can create, update, archive, or unarchive the list.
+- Lists are archived by setting `status` to `archived`; hard delete is disabled in the starter rules.
 
 Document shape:
 
@@ -155,11 +156,13 @@ Document shape:
 {
   name: 'Favorites',
   ownerUid: 'firebase-auth-uid',
+  status: 'active' | 'archived',
   questionIds: [
     'qb_questions_v1 document id'
   ],
   createdAt: Timestamp,
-  updatedAt: Timestamp
+  updatedAt: Timestamp,
+  archivedAt: Timestamp
 }
 ```
 
@@ -167,6 +170,7 @@ Notes:
 
 - Lists can contain published questions from any author.
 - The app stores references as question document IDs, not embedded question snapshots.
+- The app treats missing list `status` as active for legacy list documents.
 
 ## Local Browser Storage
 
@@ -211,5 +215,5 @@ See `firestore.rules` for a starter ruleset. It enforces:
 - public read access only for published questions,
 - author-only question create/update/archive,
 - signed-in user-only reactions,
-- private user-owned lists,
+- private user-owned active and archived lists,
 - no hard delete for questions.

@@ -19,10 +19,10 @@
         </div>
         <div class="header-actions">
             <button class="btn" id="onboardingBtn">Guide</button>
-            <button class="btn" id="templatesBtn">Templates</button>
-            <button class="btn" id="importBtn">Import</button>
-            <button class="btn" id="exportBtn">Export CSV</button>
-            <button class="btn primary" id="newQuestionBtn">New Question</button>
+            <button class="btn" id="templatesBtn" hidden>Templates</button>
+            <button class="btn" id="importBtn" hidden>Import</button>
+            <button class="btn" id="exportBtn" hidden>Export CSV</button>
+            <button class="btn primary" id="newQuestionBtn" hidden>New Question</button>
             <button class="btn" id="loginBtn">Google Login</button>
             <button class="btn" id="logoutBtn" hidden>Logout</button>
         </div>
@@ -99,6 +99,7 @@
                 <select id="visibilityFilter">
                     <option value="published">Published</option>
                     <option value="mine">My Questions</option>
+                    <option value="archived">My Archived</option>
                     <option value="all">Published + Mine</option>
                 </select>
             </label>
@@ -125,6 +126,11 @@
                     <div class="list-create-row">
                         <input id="newListName" placeholder="List name" />
                         <button class="btn primary" id="createListBtn">Create List</button>
+                        <select id="listStatusFilter">
+                            <option value="active">Active Lists</option>
+                            <option value="archived">Archived Lists</option>
+                            <option value="all">All Lists</option>
+                        </select>
                     </div>
                     <div id="listsContainer" class="lists-container"></div>
                 </div>

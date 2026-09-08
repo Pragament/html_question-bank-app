@@ -54,8 +54,7 @@ service cloud.firestore {
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid;
 
-      allow delete: if signedIn()
-        && resource.data.ownerUid == request.auth.uid;
+      allow delete: if false;
     }
   }
 }
