@@ -43,6 +43,10 @@ a {
     color: inherit;
 }
 
+[hidden] {
+    display: none !important;
+}
+
 .app-header {
     min-height: 68px;
     display: flex;
