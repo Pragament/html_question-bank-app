@@ -2133,8 +2133,11 @@ function renderPrompt() {
     const subject = $('promptSubject')?.value || 'Mathematics';
     const className = $('promptClass')?.value || 'IX';
     const count = $('promptCount')?.value || '10';
-    const difficulty = $('promptDifficulty')?.value || 'Medium';
+    const difficulty = $('promptDifficulty')?.value || 'Mixed';
     const topic = $('promptTopic')?.value || '';
+    const difficultyRequirement = difficulty === 'Mixed'
+        ? '- include a balanced spread of Easy, Medium, and Hard questions.\n- each row\'s difficulty field must be exactly one of Easy, Medium, or Hard. Do not use Mixed as a row difficulty.'
+        : `- difficulty must be "${difficulty}".\n- each row's difficulty field must exactly match "${difficulty}".`;
     els.aiPromptText.textContent = `Create ${count} import-ready question bank rows as CSV.
 Use exactly these headers:
 ${headers}
@@ -2142,7 +2145,7 @@ ${headers}
 Requirements:
 - class must be "${className}".
 - subject must be "${subject}".
-- difficulty must be "${difficulty}".
+${difficultyRequirement}
 - include chapter and topic${topic ? `, focused on "${topic}"` : ''}.
 - type must be one of mcq, true_false, fib, short_answer.
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
