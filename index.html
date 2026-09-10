@@ -148,20 +148,28 @@
             <div class="form-grid">
                 <label class="field">
                     <span>Class</span>
-                    <input id="qClass" required list="classList" />
+                    <select id="qClass" required></select>
                 </label>
                 <label class="field">
                     <span>Subject</span>
-                    <input id="qSubject" required list="subjectList" />
+                    <select id="qSubject" required></select>
                 </label>
                 <label class="field">
                     <span>Chapter</span>
-                    <input id="qChapter" required list="chapterList" />
+                    <select id="qChapter" required></select>
                 </label>
+                <div class="taxonomy-add-row wide" id="addQuestionChapterRow">
+                    <input id="newQuestionChapter" placeholder="Missing chapter name" />
+                    <button class="btn" type="button" id="addQuestionChapterBtn">Add Chapter</button>
+                </div>
                 <label class="field">
                     <span>Topic</span>
-                    <input id="qTopic" required list="topicList" />
+                    <select id="qTopic" required></select>
                 </label>
+                <div class="taxonomy-add-row wide" id="addQuestionTopicRow">
+                    <input id="newQuestionTopic" placeholder="Missing topic name" />
+                    <button class="btn" type="button" id="addQuestionTopicBtn">Add Topic</button>
+                </div>
                 <label class="field">
                     <span>Difficulty</span>
                     <select id="qDifficulty">
@@ -289,31 +297,48 @@
                 <summary>AI Prompt Builder</summary>
                 <div class="form-grid">
                     <label class="field">
-                        <span>Subject</span>
-                        <input id="promptSubject" value="Mathematics" />
+                        <span>Class</span>
+                        <select id="promptClass" required></select>
                     </label>
                     <label class="field">
-                        <span>Class</span>
-                        <input id="promptClass" value="IX" />
+                        <span>Subject</span>
+                        <select id="promptSubject" required></select>
                     </label>
+                    <label class="field">
+                        <span>Chapter</span>
+                        <select id="promptChapter" required></select>
+                    </label>
+                    <div class="taxonomy-add-row wide" id="addPromptChapterRow">
+                        <input id="newPromptChapter" placeholder="Missing chapter name" />
+                        <button class="btn" type="button" id="addPromptChapterBtn">Add Chapter</button>
+                    </div>
+                    <label class="field wide">
+                        <span>Topic</span>
+                        <select id="promptTopic" multiple required></select>
+                    </label>
+                    <div class="taxonomy-add-row wide" id="addPromptTopicRow">
+                        <input id="newPromptTopic" placeholder="Missing topic name" />
+                        <button class="btn" type="button" id="addPromptTopicBtn">Add Topic</button>
+                    </div>
                     <div class="question-type-grid wide">
                         <label class="field">
                             <span>MCQ</span>
-                            <input id="pickMcqCount" type="number" min="0" step="1" placeholder="All" />
+                            <input id="pickMcqCount" type="number" min="0" step="1" value="6" placeholder="Auto" />
                         </label>
                         <label class="field">
                             <span>FIB</span>
-                            <input id="pickFibCount" type="number" min="0" step="1" placeholder="All" />
+                            <input id="pickFibCount" type="number" min="0" step="1" value="12" placeholder="Auto" />
                         </label>
                         <label class="field">
                             <span>Short Answer</span>
-                            <input id="pickShortAnswerCount" type="number" min="0" step="1" placeholder="All" />
+                            <input id="pickShortAnswerCount" type="number" min="0" step="1" value="9" placeholder="Auto" />
                         </label>
                         <label class="field">
                             <span>True / False</span>
-                            <input id="pickTrueFalseCount" type="number" min="0" step="1" placeholder="All" />
+                            <input id="pickTrueFalseCount" type="number" min="0" step="1" value="3" placeholder="Auto" />
                         </label>
                     </div>
+                    <p class="prompt-note wide">Recommended: use more FIB and short-answer questions, with fewer MCQ and true/false questions, to reduce student guesswork.</p>
                     <label class="field">
                         <span>Difficulty</span>
                         <select id="promptDifficulty">
@@ -322,10 +347,6 @@
                             <option>Hard</option>
                             <option selected>Mixed</option>
                         </select>
-                    </label>
-                    <label class="field wide">
-                        <span>Topic</span>
-                        <input id="promptTopic" placeholder="Optional" />
                     </label>
                 </div>
                 <div class="prompt-actions">

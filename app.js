@@ -304,6 +304,8 @@ if (window.mermaid) {
 }
 
 bindEvents();
+renderQuestionTaxonomyOptions();
+renderPromptTaxonomyOptions();
 renderPrompt();
 promptOnboardingOnRefresh();
 listenForTaxonomy();
@@ -336,6 +338,33 @@ function bindEvents() {
     $('archiveQuestionBtn').addEventListener('click', archiveActiveQuestion);
     els.questionForm.addEventListener('submit', saveQuestion);
     $('qType').addEventListener('change', () => renderAnswerEditor());
+    $('qClass').addEventListener('change', () => {
+        $('qSubject').value = '';
+        $('qChapter').value = '';
+        $('qTopic').value = '';
+        renderQuestionTaxonomyOptions();
+    });
+    $('qSubject').addEventListener('change', () => {
+        $('qChapter').value = '';
+        $('qTopic').value = '';
+        renderQuestionTaxonomyOptions();
+    });
+    $('qChapter').addEventListener('change', () => {
+        $('qTopic').value = '';
+        renderQuestionTaxonomyOptions();
+    });
+    $('addQuestionChapterBtn').addEventListener('click', addQuestionChapter);
+    $('addQuestionTopicBtn').addEventListener('click', addQuestionTopic);
+    $('newQuestionChapter').addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addQuestionChapter();
+    });
+    $('newQuestionTopic').addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addQuestionTopic();
+    });
     $('addTranslationBtn').addEventListener('click', addTranslationBlock);
     $('closeToolDialog').addEventListener('click', () => {
         els.toolDialog.close();
@@ -363,9 +392,40 @@ function bindEvents() {
     els.listStatusFilter.addEventListener('change', renderLists);
     $('clearFiltersBtn').addEventListener('click', clearFilters);
 
-    ['promptSubject', 'promptClass', 'pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptTopic'].forEach(id => {
+    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty'].forEach(id => {
         $(id).addEventListener('input', renderPrompt);
         $(id).addEventListener('change', renderPrompt);
+    });
+    $('promptClass').addEventListener('change', () => {
+        $('promptSubject').value = '';
+        $('promptChapter').value = '';
+        $('promptTopic').value = '';
+        renderPromptTaxonomyOptions();
+        renderPrompt();
+    });
+    $('promptSubject').addEventListener('change', () => {
+        $('promptChapter').value = '';
+        $('promptTopic').value = '';
+        renderPromptTaxonomyOptions();
+        renderPrompt();
+    });
+    $('promptChapter').addEventListener('change', () => {
+        $('promptTopic').value = '';
+        renderPromptTaxonomyOptions();
+        renderPrompt();
+    });
+    $('promptTopic').addEventListener('change', renderPrompt);
+    $('addPromptChapterBtn').addEventListener('click', addPromptChapter);
+    $('addPromptTopicBtn').addEventListener('click', addPromptTopic);
+    $('newPromptChapter').addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addPromptChapter();
+    });
+    $('newPromptTopic').addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        addPromptTopic();
     });
     filterIds.forEach(id => $(id).addEventListener('input', render));
     filterIds.forEach(id => $(id).addEventListener('change', render));
@@ -711,6 +771,9 @@ function listenForTaxonomy() {
         taxonomy = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort(sortTaxonomyNodes);
         taxonomyById = new Map(taxonomy.map(node => [node.id, node]));
         renderMetadataFilterOptions();
+        renderQuestionTaxonomyOptions();
+        renderPromptTaxonomyOptions();
+        renderPrompt();
         render();
     });
 }
@@ -805,6 +868,195 @@ function renderMetadataFilterOptions() {
     renderDatalistOptions('subjectList', taxonomyLabels('subject'));
     renderDatalistOptions('chapterList', taxonomyLabels('chapter'));
     renderDatalistOptions('topicList', taxonomyLabels('topic'));
+}
+
+function renderQuestionTaxonomyOptions(selection = {}) {
+    const classId = renderPromptSelectOptions('qClass', promptTaxonomyOptions('class'), 'Select class', selection.classId || '');
+    const subjectOptions = classId ? promptTaxonomyOptions('subject', classId) : [];
+    const subjectId = renderPromptSelectOptions('qSubject', subjectOptions, 'Select subject', selection.subjectId || '');
+    const chapterOptions = subjectId ? promptTaxonomyOptions('chapter', subjectId) : [];
+    const chapterId = renderPromptSelectOptions('qChapter', chapterOptions, 'Select chapter', selection.chapterId || '');
+    const topicOptions = chapterId ? promptTaxonomyOptions('topic', chapterId) : [];
+    renderPromptSelectOptions('qTopic', topicOptions, 'Select topic', selection.topicId || '');
+    updateQuestionTaxonomyVisibility();
+}
+
+function updateQuestionTaxonomyVisibility() {
+    setPromptSelectVisibility('qSubject', Boolean($('qClass').value));
+    setPromptSelectVisibility('qChapter', Boolean($('qSubject').value));
+    setPromptSelectVisibility('qTopic', Boolean($('qChapter').value));
+    $('addQuestionChapterRow').hidden = !$('qSubject').value;
+    $('addQuestionTopicRow').hidden = !$('qChapter').value;
+}
+
+function renderPromptTaxonomyOptions() {
+    const classId = renderPromptSelectOptions('promptClass', promptTaxonomyOptions('class'), 'Select class', preferredPromptTaxonomyId('class', 'IX'));
+    const subjectOptions = classId ? promptTaxonomyOptions('subject', classId) : [];
+    const subjectId = renderPromptSelectOptions('promptSubject', subjectOptions, 'Select subject', preferredPromptTaxonomyId('subject', 'Mathematics', classId));
+    const chapterOptions = subjectId ? promptTaxonomyOptions('chapter', subjectId) : [];
+    const chapterId = renderPromptSelectOptions('promptChapter', chapterOptions, 'Select chapter');
+    const topicOptions = chapterId ? promptTaxonomyOptions('topic', chapterId) : [];
+    renderPromptMultiSelectOptions('promptTopic', topicOptions);
+    updatePromptTaxonomyVisibility();
+}
+
+function promptTaxonomyOptions(type, parentId = '') {
+    return taxonomy
+        .filter(node => node.type === type && (!parentId || node.parentId === parentId))
+        .map(node => ({ value: node.id, label: node.label }))
+        .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }));
+}
+
+function preferredPromptTaxonomyId(type, label, parentId = '') {
+    const normalizedLabel = label.toLowerCase();
+    return taxonomy.find(node =>
+        node.type === type
+        && node.label?.toLowerCase() === normalizedLabel
+        && (!parentId || node.parentId === parentId)
+    )?.id || '';
+}
+
+function renderPromptSelectOptions(id, options, placeholder, fallbackId = '') {
+    const select = $(id);
+    const selected = select.value || fallbackId;
+    select.innerHTML = `<option value="">${esc(placeholder)}</option>${options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('')}`;
+    select.value = options.some(option => option.value === selected) ? selected : '';
+    return select.value;
+}
+
+function renderPromptMultiSelectOptions(id, options) {
+    const select = $(id);
+    const selected = new Set(Array.from(select.selectedOptions).map(option => option.value));
+    select.innerHTML = options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('');
+    Array.from(select.options).forEach(option => {
+        option.selected = selected.has(option.value);
+    });
+    return Array.from(select.selectedOptions).map(option => option.value);
+}
+
+function updatePromptTaxonomyVisibility() {
+    setPromptSelectVisibility('promptSubject', Boolean($('promptClass').value));
+    setPromptSelectVisibility('promptChapter', Boolean($('promptSubject').value));
+    setPromptSelectVisibility('promptTopic', Boolean($('promptChapter').value));
+    $('addPromptChapterRow').hidden = !$('promptSubject').value;
+    $('addPromptTopicRow').hidden = !$('promptChapter').value;
+}
+
+function setPromptSelectVisibility(id, isVisible) {
+    const select = $(id);
+    select.disabled = !isVisible;
+    select.closest('.field').hidden = !isVisible;
+}
+
+async function addPromptChapter() {
+    if (!currentUser) return toast('Sign in required to add a chapter');
+    const classId = $('promptClass').value;
+    const subjectId = $('promptSubject').value;
+    const label = normalizeTaxonomyLabel($('newPromptChapter').value);
+    if (!classId || !subjectId) return toast('Select class and subject first');
+    if (!label) return toast('Enter a chapter name');
+    const node = {
+        id: taxonomyId('chapter', label, subjectId),
+        type: 'chapter',
+        label,
+        parentId: subjectId,
+        classId,
+        subjectId,
+        chapterId: taxonomyId('chapter', label, subjectId)
+    };
+    await savePromptTaxonomyNode(node);
+    $('newPromptChapter').value = '';
+    $('promptChapter').value = node.id;
+    $('promptTopic').value = '';
+    renderPromptTaxonomyOptions();
+    renderPrompt();
+    toast('Chapter added');
+}
+
+async function addPromptTopic() {
+    if (!currentUser) return toast('Sign in required to add a topic');
+    const classId = $('promptClass').value;
+    const subjectId = $('promptSubject').value;
+    const chapterId = $('promptChapter').value;
+    const label = normalizeTaxonomyLabel($('newPromptTopic').value);
+    if (!classId || !subjectId || !chapterId) return toast('Select class, subject, and chapter first');
+    if (!label) return toast('Enter a topic name');
+    const topicId = taxonomyId('topic', label, chapterId);
+    const node = {
+        id: topicId,
+        type: 'topic',
+        label,
+        parentId: chapterId,
+        classId,
+        subjectId,
+        chapterId,
+        topicId
+    };
+    await savePromptTaxonomyNode(node);
+    $('newPromptTopic').value = '';
+    renderPromptTaxonomyOptions();
+    Array.from($('promptTopic').options).forEach(option => {
+        if (option.value === topicId) option.selected = true;
+    });
+    renderPrompt();
+    toast('Topic added');
+}
+
+async function addQuestionChapter() {
+    if (!currentUser) return toast('Sign in required to add a chapter');
+    const classId = $('qClass').value;
+    const subjectId = $('qSubject').value;
+    const label = normalizeTaxonomyLabel($('newQuestionChapter').value);
+    if (!classId || !subjectId) return toast('Select class and subject first');
+    if (!label) return toast('Enter a chapter name');
+    const chapterId = taxonomyId('chapter', label, subjectId);
+    const node = {
+        id: chapterId,
+        type: 'chapter',
+        label,
+        parentId: subjectId,
+        classId,
+        subjectId,
+        chapterId
+    };
+    await savePromptTaxonomyNode(node);
+    $('newQuestionChapter').value = '';
+    renderQuestionTaxonomyOptions({ classId, subjectId, chapterId });
+    toast('Chapter added');
+}
+
+async function addQuestionTopic() {
+    if (!currentUser) return toast('Sign in required to add a topic');
+    const classId = $('qClass').value;
+    const subjectId = $('qSubject').value;
+    const chapterId = $('qChapter').value;
+    const label = normalizeTaxonomyLabel($('newQuestionTopic').value);
+    if (!classId || !subjectId || !chapterId) return toast('Select class, subject, and chapter first');
+    if (!label) return toast('Enter a topic name');
+    const topicId = taxonomyId('topic', label, chapterId);
+    const node = {
+        id: topicId,
+        type: 'topic',
+        label,
+        parentId: chapterId,
+        classId,
+        subjectId,
+        chapterId,
+        topicId
+    };
+    await savePromptTaxonomyNode(node);
+    $('newQuestionTopic').value = '';
+    renderQuestionTaxonomyOptions({ classId, subjectId, chapterId, topicId });
+    toast('Topic added');
+}
+
+async function savePromptTaxonomyNode(node) {
+    await setDoc(doc(db, COLLECTIONS.taxonomy, node.id), {
+        ...node,
+        updatedAt: serverTimestamp()
+    }, { merge: true });
+    taxonomyById.set(node.id, node);
+    taxonomy = Array.from(taxonomyById.values()).sort(sortTaxonomyNodes);
 }
 
 function taxonomyOptions(type, parentId = '') {
@@ -1044,10 +1296,9 @@ function openQuestionDialog(question = null) {
     $('archiveQuestionBtn').hidden = !activeQuestionId;
     $('archiveQuestionBtn').textContent = question?.status === 'archived' ? 'Unarchive' : 'Archive';
     $('archiveQuestionBtn').classList.toggle('danger', question?.status !== 'archived');
-    $('qClass').value = question ? taxonomyLabel(question, 'class') : '';
-    $('qSubject').value = question ? taxonomyLabel(question, 'subject') : '';
-    $('qChapter').value = question ? taxonomyLabel(question, 'chapter') : '';
-    $('qTopic').value = question ? taxonomyLabel(question, 'topic') : '';
+    renderQuestionTaxonomyOptions(question ? questionTaxonomySelection(question) : {});
+    $('newQuestionChapter').value = '';
+    $('newQuestionTopic').value = '';
     $('qDifficulty').value = question?.difficulty || 'Medium';
     $('qType').value = question?.type || 'mcq';
     $('qStatus').value = question?.status === 'archived' ? question.previousStatus || 'published' : question?.status || 'published';
@@ -1066,6 +1317,18 @@ function closeQuestionDialog() {
     savedSelectionRange = null;
     activeTarget = null;
     els.questionDialog.close();
+}
+
+function questionTaxonomySelection(question) {
+    if (!question) return {};
+    const path = normalizeQuestionTaxonomy(question);
+    if (!path) return {};
+    return {
+        classId: path.classId,
+        subjectId: path.subjectId,
+        chapterId: path.chapterId,
+        topicId: path.topicId
+    };
 }
 
 function renderAnswerEditor(question = null) {
@@ -1177,10 +1440,10 @@ async function saveQuestion(event) {
     const existing = activeQuestionId ? questions.find(q => q.id === activeQuestionId) : null;
     if (existing && existing.authorUid !== currentUser.uid) return toast('Only the author can edit this question');
     const taxonomyLabels = {
-        className: $('qClass').value.trim(),
-        subject: $('qSubject').value.trim(),
-        chapter: $('qChapter').value.trim(),
-        topic: $('qTopic').value.trim()
+        className: selectedPromptLabel('qClass'),
+        subject: selectedPromptLabel('qSubject'),
+        chapter: selectedPromptLabel('qChapter'),
+        topic: selectedPromptLabel('qTopic')
     };
     const payload = {
         type,
@@ -2130,11 +2393,18 @@ function downloadTemplateCsv() {
 
 function renderPrompt() {
     const headers = TEMPLATE_HEADERS.join(',');
-    const subject = $('promptSubject')?.value || 'Mathematics';
-    const className = $('promptClass')?.value || 'IX';
+    const className = selectedPromptLabel('promptClass');
+    const subject = selectedPromptLabel('promptSubject');
+    const chapter = selectedPromptLabel('promptChapter');
+    const topics = selectedPromptLabels('promptTopic');
     const typeRequirement = promptTypeRequirement();
     const difficulty = $('promptDifficulty')?.value || 'Mixed';
-    const topic = $('promptTopic')?.value || '';
+    const classRequirement = className ? `- class must be "${className}".` : '- select a class from the taxonomy before generating final CSV.';
+    const subjectRequirement = subject ? `- subject must be "${subject}".` : '- select a subject from the selected class before generating final CSV.';
+    const chapterRequirement = chapter ? `- chapter must be "${chapter}".` : '- select a chapter from the selected subject before generating final CSV.';
+    const topicRequirement = topics.length
+        ? `- each row's topic field must be exactly one of: ${topics.map(topic => `"${topic}"`).join(', ')}.`
+        : '- select at least one topic from the selected chapter before generating final CSV.';
     const difficultyRequirement = difficulty === 'Mixed'
         ? '- include a balanced spread of Easy, Medium, and Hard questions.\n- each row\'s difficulty field must be exactly one of Easy, Medium, or Hard. Do not use Mixed as a row difficulty.'
         : `- difficulty must be "${difficulty}".\n- each row's difficulty field must exactly match "${difficulty}".`;
@@ -2143,16 +2413,31 @@ Use exactly these headers:
 ${headers}
 
 Requirements:
-- class must be "${className}".
-- subject must be "${subject}".
+${classRequirement}
+${subjectRequirement}
+${chapterRequirement}
+${topicRequirement}
 ${difficultyRequirement}
-- include chapter and topic${topic ? `, focused on "${topic}"` : ''}.
 ${typeRequirement}
+- prefer more FIB and short_answer rows and fewer mcq and true_false rows to reduce student guesswork.
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
 - For translated content, fill language, translated_question, translated_answer, and translated_option_a through translated_option_d when relevant.
 - Escape commas and quotation marks correctly according to CSV rules.
 - Return only valid CSV inside one csv code block.`;
+}
+
+function selectedPromptLabel(id) {
+    const select = $(id);
+    if (!select?.value) return '';
+    return select.selectedOptions[0]?.textContent?.trim() || '';
+}
+
+function selectedPromptLabels(id) {
+    const select = $(id);
+    return Array.from(select?.selectedOptions || [])
+        .map(option => option.textContent.trim())
+        .filter(Boolean);
 }
 
 function promptTypeRequirement() {
@@ -2192,8 +2477,21 @@ function promptTypeCount(id) {
 }
 
 async function copyPrompt() {
+    if (!isPromptTaxonomyComplete()) {
+        toast('Select class, subject, chapter, and at least one topic');
+        return;
+    }
     await navigator.clipboard.writeText(els.aiPromptText.textContent);
     toast('Prompt copied');
+}
+
+function isPromptTaxonomyComplete() {
+    return Boolean(
+        $('promptClass').value
+        && $('promptSubject').value
+        && $('promptChapter').value
+        && $('promptTopic').selectedOptions.length
+    );
 }
 
 function clearFilters() {

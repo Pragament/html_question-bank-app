@@ -556,6 +556,33 @@ a {
     margin: 0;
 }
 
+#promptTopic {
+    min-height: 96px;
+}
+
+.taxonomy-add-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+}
+
+.taxonomy-add-row input {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #fff;
+    color: var(--text);
+    padding: 8px 10px;
+}
+
+.prompt-note {
+    margin: -2px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .import-error {
     margin-top: 10px;
     border: 1px solid #efc8c3;
@@ -790,7 +817,8 @@ a {
     .filters-panel,
     .form-grid,
     .import-layout,
-    .question-type-grid {
+    .question-type-grid,
+    .taxonomy-add-row {
         grid-template-columns: 1fr;
     }
 
