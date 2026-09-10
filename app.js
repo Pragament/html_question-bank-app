@@ -363,7 +363,7 @@ function bindEvents() {
     els.listStatusFilter.addEventListener('change', renderLists);
     $('clearFiltersBtn').addEventListener('click', clearFilters);
 
-    ['promptSubject', 'promptClass', 'promptCount', 'promptDifficulty', 'promptTopic'].forEach(id => {
+    ['promptSubject', 'promptClass', 'pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptTopic'].forEach(id => {
         $(id).addEventListener('input', renderPrompt);
         $(id).addEventListener('change', renderPrompt);
     });
@@ -2132,13 +2132,13 @@ function renderPrompt() {
     const headers = TEMPLATE_HEADERS.join(',');
     const subject = $('promptSubject')?.value || 'Mathematics';
     const className = $('promptClass')?.value || 'IX';
-    const count = $('promptCount')?.value || '10';
+    const typeRequirement = promptTypeRequirement();
     const difficulty = $('promptDifficulty')?.value || 'Mixed';
     const topic = $('promptTopic')?.value || '';
     const difficultyRequirement = difficulty === 'Mixed'
         ? '- include a balanced spread of Easy, Medium, and Hard questions.\n- each row\'s difficulty field must be exactly one of Easy, Medium, or Hard. Do not use Mixed as a row difficulty.'
         : `- difficulty must be "${difficulty}".\n- each row's difficulty field must exactly match "${difficulty}".`;
-    els.aiPromptText.textContent = `Create ${count} import-ready question bank rows as CSV.
+    els.aiPromptText.textContent = `Create import-ready question bank rows as CSV.
 Use exactly these headers:
 ${headers}
 
@@ -2147,12 +2147,48 @@ Requirements:
 - subject must be "${subject}".
 ${difficultyRequirement}
 - include chapter and topic${topic ? `, focused on "${topic}"` : ''}.
-- type must be one of mcq, true_false, fib, short_answer.
+${typeRequirement}
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
 - For translated content, fill language, translated_question, translated_answer, and translated_option_a through translated_option_d when relevant.
 - Escape commas and quotation marks correctly according to CSV rules.
 - Return only valid CSV inside one csv code block.`;
+}
+
+function promptTypeRequirement() {
+    const types = [
+        { id: 'pickMcqCount', label: 'MCQ', value: 'mcq' },
+        { id: 'pickFibCount', label: 'FIB', value: 'fib' },
+        { id: 'pickShortAnswerCount', label: 'Short Answer', value: 'short_answer' },
+        { id: 'pickTrueFalseCount', label: 'True / False', value: 'true_false' }
+    ];
+    const exactTypes = types
+        .map(type => ({ ...type, count: promptTypeCount(type.id) }))
+        .filter(type => Number.isInteger(type.count) && type.count > 0);
+    const blockedTypes = types
+        .filter(type => $(type.id)?.value === '0')
+        .map(type => type.value);
+    const openTypes = types
+        .filter(type => !exactTypes.some(exact => exact.id === type.id) && !blockedTypes.includes(type.value));
+    const lines = ['- type must be one of mcq, true_false, fib, short_answer.'];
+
+    if (exactTypes.length) {
+        lines.push(`- create exactly ${exactTypes.map(type => `${type.count} ${type.value}`).join(', ')} row${exactTypes.reduce((sum, type) => sum + type.count, 0) === 1 ? '' : 's'}.`);
+    }
+    if (openTypes.length) {
+        lines.push(`- for blank type counts, include ${openTypes.map(type => type.value).join(', ')} in a balanced mix.`);
+    }
+    if (blockedTypes.length) {
+        lines.push(`- do not create rows with these types: ${blockedTypes.join(', ')}.`);
+    }
+
+    return lines.join('\n');
+}
+
+function promptTypeCount(id) {
+    const value = $(id)?.value?.trim() || '';
+    const count = Number(value);
+    return value && Number.isInteger(count) ? count : null;
 }
 
 async function copyPrompt() {

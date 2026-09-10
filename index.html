@@ -296,10 +296,24 @@
                         <span>Class</span>
                         <input id="promptClass" value="IX" />
                     </label>
-                    <label class="field">
-                        <span>Count</span>
-                        <input id="promptCount" type="number" min="1" value="10" />
-                    </label>
+                    <div class="question-type-grid wide">
+                        <label class="field">
+                            <span>MCQ</span>
+                            <input id="pickMcqCount" type="number" min="0" step="1" placeholder="All" />
+                        </label>
+                        <label class="field">
+                            <span>FIB</span>
+                            <input id="pickFibCount" type="number" min="0" step="1" placeholder="All" />
+                        </label>
+                        <label class="field">
+                            <span>Short Answer</span>
+                            <input id="pickShortAnswerCount" type="number" min="0" step="1" placeholder="All" />
+                        </label>
+                        <label class="field">
+                            <span>True / False</span>
+                            <input id="pickTrueFalseCount" type="number" min="0" step="1" placeholder="All" />
+                        </label>
+                    </div>
                     <label class="field">
                         <span>Difficulty</span>
                         <select id="promptDifficulty">

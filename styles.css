@@ -546,6 +546,16 @@ a {
     margin-top: 10px;
 }
 
+.question-type-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.question-type-grid .field {
+    margin: 0;
+}
+
 .import-error {
     margin-top: 10px;
     border: 1px solid #efc8c3;
@@ -779,7 +789,8 @@ a {
 
     .filters-panel,
     .form-grid,
-    .import-layout {
+    .import-layout,
+    .question-type-grid {
         grid-template-columns: 1fr;
     }
 
