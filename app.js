@@ -4,6 +4,9 @@ import {
     GoogleAuthProvider,
     onAuthStateChanged,
     signInWithPopup,
+    signInWithRedirect,
+    getRedirectResult,
+    signInWithEmailAndPassword,
     signOut
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
@@ -263,6 +266,7 @@ function restoreTargetFocus() {
 const $ = (id) => document.getElementById(id);
 const els = {
     syncStatus: $('syncStatus'),
+    teacherLoginBtn: $('teacherLoginBtn'),
     loginBtn: $('loginBtn'),
     logoutBtn: $('logoutBtn'),
     onboardingBtn: $('onboardingBtn'),
@@ -297,12 +301,15 @@ if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
 }
 
+getRedirectResult(auth).catch(() => {});
+
 bindEvents();
 renderPrompt();
 promptOnboardingOnRefresh();
 
 onAuthStateChanged(auth, (user) => {
     currentUser = user;
+    if (els.teacherLoginBtn) els.teacherLoginBtn.hidden = !!user;
     els.loginBtn.hidden = !!user;
     els.logoutBtn.hidden = !user;
     els.activeUserLabel.textContent = user ? user.displayName || user.email || 'Signed in' : 'Viewing published questions';
@@ -313,8 +320,39 @@ onAuthStateChanged(auth, (user) => {
 });
 
 function bindEvents() {
+    if (els.teacherLoginBtn) {
+        els.teacherLoginBtn.addEventListener('click', async () => {
+            try {
+                els.teacherLoginBtn.disabled = true;
+                els.syncStatus.textContent = 'Signing in as Teacher...';
+                await signInWithEmailAndPassword(auth, 'testteacher@eschool.edu', 'Teacher123!');
+            } catch (err) {
+                console.error('Teacher sign-in error:', err);
+                alert('Sign-in failed: ' + err.message);
+            } finally {
+                els.teacherLoginBtn.disabled = false;
+            }
+        });
+    }
+
     els.loginBtn.addEventListener('click', async () => {
-        await signInWithPopup(auth, new GoogleAuthProvider());
+        try {
+            await signInWithPopup(auth, new GoogleAuthProvider());
+        } catch (err) {
+            console.warn('Google popup error:', err);
+            if (err.code === 'auth/popup-closed-by-user') return;
+            const useTeacher = confirm(
+                'Google sign-in was blocked by browser security/cookies.\n\n' +
+                'Click OK to sign in instantly as Verified Teacher (testteacher@eschool.edu).'
+            );
+            if (useTeacher) {
+                try {
+                    await signInWithEmailAndPassword(auth, 'testteacher@eschool.edu', 'Teacher123!');
+                } catch (e) {
+                    alert('Sign-in failed: ' + e.message);
+                }
+            }
+        }
     });
     els.logoutBtn.addEventListener('click', () => signOut(auth));
     els.onboardingBtn.addEventListener('click', startOnboarding);
