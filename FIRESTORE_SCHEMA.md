@@ -4,7 +4,7 @@ This app uses prefixed collections so it can share the Firebase project with oth
 
 ## Collections
 
-### `qb_questions_v1`
+### `/qb_questions_v1/{questionId}`
 
 Stores all question bank questions.
 
@@ -24,12 +24,14 @@ Document shape:
 ```js
 {
   type: 'mcq' | 'true_false' | 'fib' | 'short_answer',
+  sectionId: 'classSections document id',
   classId: 'class_ix',
   subjectId: 'class_ix__subject_mathematics',
   chapterId: 'class_ix__subject_mathematics__chapter_algebra',
   topicId: 'class_ix__subject_mathematics__chapter_algebra__topic_polynomials',
   difficulty: 'Easy' | 'Medium' | 'Hard' | 'Very Hard',
   status: 'published' | 'draft' | 'archived',
+  verified: true,
 
   promptHtml: '<p>Question text with rich HTML</p>',
 
@@ -53,13 +55,16 @@ Document shape:
   // Short-answer only.
   shortAnswerHtml: '<p>Expected answer</p>',
 
+  explanation: 'Teacher-facing explanation text',
+  explanationUrl: 'https://example.com/explanation',
+  skill: 'Listening',
+  actfl_level: 'Novice Low',
+  actfl_sublevel: 'Low',
+  actfl_mode: 'Interpretive',
+
   // Optional language translations for question and answer content.
   translations: {
-    hi: {
-      question: 'Translated question',
-      answer: 'Translated answer',
-      options: ['Translated A', 'Translated B', 'Translated C', 'Translated D']
-    }
+    Telugu: { question: '', options: [''], answer: '' }
   },
 
   authorUid: 'firebase-auth-uid',
@@ -75,9 +80,15 @@ Notes:
 - `promptHtml`, `options[].html`, and `shortAnswerHtml` can contain rich editor HTML for bold, italic, code blocks, inline images, equations, tables, and Mermaid diagram placeholders/rendered content.
 - Inline images are stored inside the document as data URLs. Keep images small because Firestore documents have a 1 MiB size limit.
 - New and edited questions store taxonomy reference IDs for class, subject, chapter, and topic. Legacy label fields are still read by the client as a fallback during migration.
+- Homepage class selection is mandatory before displaying questions. Filter options come only from `qb_taxonomy_v1`; subjects appear after class selection, chapters after subject selection, and topics after chapter selection. Changing a parent clears its descendants.
 - Client-side filtering uses taxonomy IDs, `difficulty`, and `type`.
+- `sectionId` references a `classSections` document. `verified` records question verification.
+- `skill` stores the LSRW skill. Supported admin filter/import values are `Listening`, `Speaking`, `Reading`, and `Writing`.
+- `actfl_level` is optional and stores the proficiency level. Omit the CSV column or leave its cell blank when not applicable. Imports also treat `N/A`, `NA`, `None`, `null`, `not applicable`, and `-` as blank and normalize supported levels to their standard capitalization. Supported admin filter/import values are `Novice Low`, `Novice Mid`, `Novice High`, `Intermediate Low`, `Intermediate Mid`, `Intermediate High`, `Advanced Low`, `Advanced Mid`, `Advanced High`, `Superior`, and `Distinguished`.
+- `actfl_sublevel` stores `Low`, `Mid`, or `High`; leave blank for `Superior` or `Distinguished`.
+- `actfl_mode` stores `Interpersonal`, `Interpretive`, or `Presentational`.
 
-### `qb_taxonomy_v1`
+### `/qb_taxonomy_v1/{taxonomyId}`
 
 Stores hierarchical class, subject, chapter, and topic terms. The client keeps one live snapshot of this collection and cascades filter dropdowns locally, avoiding a Firestore query for every parent selection.
 
@@ -92,6 +103,7 @@ Document shape:
   subjectId: 'class_ix__subject_mathematics',
   chapterId: 'class_ix__subject_mathematics__chapter_algebra',
   topicId: 'class_ix__subject_mathematics__chapter_algebra__topic_polynomials',
+  verified: true,
   updatedAt: Timestamp
 }
 ```
@@ -101,6 +113,7 @@ Notes:
 - Taxonomy document IDs are deterministic from the label and parent path.
 - Saving or importing a question upserts the four taxonomy documents for its class, subject, chapter, and topic path.
 - Class documents use an empty `parentId`.
+- `verified` records taxonomy term verification.
 
 ### `qb_reactions_v1`
 

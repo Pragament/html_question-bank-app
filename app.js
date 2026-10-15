@@ -71,8 +71,23 @@ const TEMPLATE_HEADERS = [
     'translated_option_a',
     'translated_option_b',
     'translated_option_c',
-    'translated_option_d'
+    'translated_option_d',
+    'sectionId',
+    'verified',
+    'explanation',
+    'explanationUrl',
+    'skill',
+    'actfl_level',
+    'actfl_sublevel',
+    'actfl_mode'
 ];
+
+const QUESTION_METADATA_VALUES = {
+    skill: ['Listening', 'Speaking', 'Reading', 'Writing'],
+    actfl_level: ['Novice Low', 'Novice Mid', 'Novice High', 'Intermediate Low', 'Intermediate Mid', 'Intermediate High', 'Advanced Low', 'Advanced Mid', 'Advanced High', 'Superior', 'Distinguished'],
+    actfl_sublevel: ['Low', 'Mid', 'High'],
+    actfl_mode: ['Interpersonal', 'Interpretive', 'Presentational']
+};
 
 const FORMULA_LIBRARY = [
     { id: 'math_frac', category: 'Mathematics', name: 'Fraction', latex: '\\frac{a}{b}' },
@@ -304,6 +319,7 @@ if (window.mermaid) {
 }
 
 bindEvents();
+renderMetadataFilterOptions();
 renderQuestionTaxonomyOptions();
 renderPromptTaxonomyOptions();
 renderPrompt();
@@ -431,6 +447,12 @@ function bindEvents() {
     filterIds.forEach(id => $(id).addEventListener('change', render));
     ['classFilter', 'subjectFilter', 'chapterFilter'].forEach(id => {
         $(id).addEventListener('change', () => {
+            const descendants = {
+                classFilter: ['subjectFilter', 'chapterFilter', 'topicFilter'],
+                subjectFilter: ['chapterFilter', 'topicFilter'],
+                chapterFilter: ['topicFilter']
+            };
+            descendants[id].forEach(childId => { $(childId).value = ''; });
             renderMetadataFilterOptions();
             render();
         });
@@ -798,7 +820,7 @@ async function loadReactions() {
 function render() {
     const visible = getFilteredQuestions();
     els.questionCount.textContent = `${visible.length} question${visible.length === 1 ? '' : 's'}`;
-    els.questionGrid.innerHTML = visible.length ? visible.map(questionCard).join('') : `<div class="empty-card">No matching questions.</div>`;
+    els.questionGrid.innerHTML = visible.length ? visible.map(questionCard).join('') : `<div class="empty-card">${$('classFilter').value ? 'No matching questions.' : 'Select a class to view questions.'}</div>`;
     bindQuestionCardActions();
     renderMathAndDiagrams(els.questionGrid);
     renderLists();
@@ -806,6 +828,7 @@ function render() {
 
 function getFilteredQuestions() {
     const filters = Object.fromEntries(filterIds.map(id => [id, $(id).value.trim()]));
+    if (!filters.classFilter) return [];
     const queryText = filters.searchInput.toLowerCase();
     const minLikes = parseOptionalNumber(filters.likesFilter);
     const minDislikes = parseOptionalNumber(filters.dislikesFilter);
@@ -860,10 +883,16 @@ function getSelectedListIds() {
 }
 
 function renderMetadataFilterOptions() {
-    renderSelectOptions('classFilter', taxonomyOptions('class'));
-    renderSelectOptions('subjectFilter', taxonomyOptions('subject', $('classFilter').value));
-    renderSelectOptions('chapterFilter', taxonomyOptions('chapter', $('subjectFilter').value));
-    renderSelectOptions('topicFilter', taxonomyOptions('topic', $('chapterFilter').value));
+    renderSelectOptions('classFilter', promptTaxonomyOptions('class'), 'Select class');
+    const classId = $('classFilter').value;
+    renderSelectOptions('subjectFilter', classId ? promptTaxonomyOptions('subject', classId) : []);
+    const subjectId = $('subjectFilter').value;
+    renderSelectOptions('chapterFilter', subjectId ? promptTaxonomyOptions('chapter', subjectId) : []);
+    const chapterId = $('chapterFilter').value;
+    renderSelectOptions('topicFilter', chapterId ? promptTaxonomyOptions('topic', chapterId) : []);
+    setPromptSelectVisibility('subjectFilter', Boolean(classId));
+    setPromptSelectVisibility('chapterFilter', Boolean(subjectId));
+    setPromptSelectVisibility('topicFilter', Boolean(chapterId));
     renderDatalistOptions('classList', taxonomyLabels('class'));
     renderDatalistOptions('subjectList', taxonomyLabels('subject'));
     renderDatalistOptions('chapterList', taxonomyLabels('chapter'));
@@ -1059,38 +1088,6 @@ async function savePromptTaxonomyNode(node) {
     taxonomy = Array.from(taxonomyById.values()).sort(sortTaxonomyNodes);
 }
 
-function taxonomyOptions(type, parentId = '') {
-    const options = taxonomy
-        .filter(node => node.type === type && (!parentId || node.parentId === parentId))
-        .map(node => ({ value: node.id, label: node.label }));
-    const legacyOptions = legacyTaxonomyOptions(type, parentId);
-    const byValue = new Map();
-    [...options, ...legacyOptions].forEach(option => byValue.set(option.value, option));
-    return Array.from(byValue.values()).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }));
-}
-
-function legacyTaxonomyOptions(type, parentId = '') {
-    const legacy = questions.map(q => normalizeQuestionTaxonomy(q)).filter(Boolean);
-    if (type === 'class') return uniqueOptions(legacy.map(path => ({ value: path.classId, label: path.classLabel })));
-    if (type === 'subject') {
-        return uniqueOptions(legacy
-            .filter(path => !parentId || path.classId === parentId)
-            .map(path => ({ value: path.subjectId, label: path.subjectLabel })));
-    }
-    if (type === 'chapter') {
-        return uniqueOptions(legacy
-            .filter(path => !parentId || path.subjectId === parentId)
-            .map(path => ({ value: path.chapterId, label: path.chapterLabel })));
-    }
-    return uniqueOptions(legacy
-        .filter(path => !parentId || path.chapterId === parentId)
-        .map(path => ({ value: path.topicId, label: path.topicLabel })));
-}
-
-function uniqueOptions(options) {
-    return Array.from(new Map(options.filter(option => option.value && option.label).map(option => [option.value, option])).values());
-}
-
 function taxonomyLabels(type) {
     return Array.from(new Set([
         ...taxonomy.filter(node => node.type === type).map(node => node.label),
@@ -1105,10 +1102,10 @@ function taxonomyLabels(type) {
     ].map(value => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
 }
 
-function renderSelectOptions(id, options) {
+function renderSelectOptions(id, options, placeholder = 'Any') {
     const select = $(id);
     const selected = select.value;
-    select.innerHTML = `<option value="">Any</option>${options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('')}`;
+    select.innerHTML = `<option value="">${esc(placeholder)}</option>${options.map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('')}`;
     select.value = options.some(option => option.value === selected) ? selected : '';
 }
 
@@ -2121,14 +2118,43 @@ async function renderMathAndDiagrams(root) {
 }
 
 function previewImport() {
+    $('aiPromptBuilder').open = false;
     const csv = $('csvPasteInput').value.trim();
     const result = parseCsvQuestions(csv);
     importRows = result.rows;
     $('confirmImportBtn').disabled = !importRows.length || !currentUser;
+    const invalidSection = result.errors.length ? buildInvalidCsvSection(csv, result.errors) : '';
     els.importPreview.innerHTML = `
         <strong>${importRows.length} valid row${importRows.length === 1 ? '' : 's'}</strong>
-        ${result.errors.length ? `<div class="card-answer">${formatImportErrors(result.errors)}</div>` : ''}
+        ${result.errors.length ? `
+            <section class="card-answer">
+                <strong>Invalid CSV rows</strong>
+                <button class="btn" type="button" id="copyInvalidCsvBtn">Copy Invalid CSV Rows</button>
+                <p id="copyInvalidCsvStatus" role="status" aria-live="polite"></p>
+                ${formatImportErrors(result.errors)}
+                <pre id="invalidCsvText">${esc(invalidSection)}</pre>
+            </section>` : ''}
     `;
+    if (result.errors.length) {
+        $('copyInvalidCsvBtn').addEventListener('click', () => copyTextToClipboard(
+            invalidSection, $('copyInvalidCsvStatus'), $('invalidCsvText')
+        ));
+    }
+}
+
+function buildInvalidCsvSection(csv, errors) {
+    const csvRows = parseCsv(csv);
+    const rowNumbers = new Set(errors.map(error => typeof error === 'string'
+        ? Number(error.match(/^Row (\d+):/)?.[1])
+        : error.row).filter(Number.isInteger));
+    const invalidRows = csvRows.filter((_, index) => rowNumbers.has(index + 1));
+    const errorText = errors.map(error => typeof error === 'string' ? error : [
+        `Row ${error.row}: ${error.message}`,
+        `Column: ${error.field}`,
+        ...(error.details || [])
+    ].join('\n')).join('\n\n');
+    const invalidCsv = invalidRows.length ? toCsv([csvRows[0], ...invalidRows]) : csv;
+    return `Validation errors:\n${errorText}\n\nInvalid CSV rows:\n${invalidCsv}`;
 }
 
 async function confirmImport() {
@@ -2222,6 +2248,11 @@ function parseCsvQuestions(text) {
             errors.push(`Row ${index + 2}: missing class, subject, chapter, topic, or question`);
             return;
         }
+        const metadataError = importQuestionMetadata(row, question);
+        if (metadataError) {
+            errors.push(`Row ${index + 2}: ${metadataError}`);
+            return;
+        }
         if (type === 'mcq') {
             const correct = splitMulti(row.correct_options).map(v => v.toUpperCase());
             question.options = LABELS.map(label => ({
@@ -2253,6 +2284,36 @@ function parseCsvQuestions(text) {
         parsed.push(question);
     });
     return { rows: parsed, errors };
+}
+
+function importQuestionMetadata(row, question) {
+    // CSV headers are normalized to lowercase; preserve Firestore's field names.
+    for (const field of ['sectionId', 'explanation', 'explanationUrl']) {
+        question[field] = (row[field.toLowerCase()] || '').trim();
+    }
+    const verified = (row.verified || '').trim().toLowerCase();
+    if (verified && !['true', 'false'].includes(verified)) return 'verified must be true or false';
+    question.verified = verified === 'true';
+    for (const [field, values] of Object.entries(QUESTION_METADATA_VALUES)) {
+        let value = (row[field] || '').trim();
+        if (field === 'actfl_level') {
+            const normalized = value.replace(/\s+/g, ' ').toLowerCase();
+            value = ['', 'n/a', 'na', 'none', 'null', 'not applicable', '-'].includes(normalized)
+                ? ''
+                : values.find(option => option.toLowerCase() === normalized) || value;
+        }
+        if (value && !values.includes(value)) return `${field} is optional and can be omitted or left blank. If provided, use one of: ${values.join(', ')}. Received: "${value}".`;
+        question[field] = value;
+    }
+    const level = question.actfl_level;
+    const sublevel = question.actfl_sublevel;
+    if (['Superior', 'Distinguished'].includes(level) && sublevel) {
+        return 'actfl_sublevel must be blank for Superior or Distinguished';
+    }
+    if (level && sublevel && !level.endsWith(` ${sublevel}`)) {
+        return 'actfl_sublevel must match actfl_level';
+    }
+    return '';
 }
 
 function fibBankImportError(rowNumber, row) {
@@ -2367,6 +2428,7 @@ function exportFilteredCsv() {
             '',
             ''
         ];
+        base.push(q.sectionId || '', typeof q.verified === 'boolean' ? String(q.verified) : '', q.explanation || '', q.explanationUrl || '', q.skill || '', q.actfl_level || '', q.actfl_sublevel || '', q.actfl_mode || '');
         rows.push(base);
         Object.entries(q.translations || {}).forEach(([lang, t]) => {
             const translated = [...base];
@@ -2381,13 +2443,50 @@ function exportFilteredCsv() {
 }
 
 function downloadTemplateCsv() {
-    const sample = [
-        TEMPLATE_HEADERS,
-        ['mcq', 'IX', 'Mathematics', 'Algebra', 'Polynomials', 'Medium', 'Which expressions are polynomials?', 'x^2 + 1', '1 / x', 'x + 3', 'sqrt(x)', 'A|C', '', '', '', 'hi', 'Kaun se expressions polynomials hain?', 'A aur C', 'x^2 + 1', '1 / x', 'x + 3', 'sqrt(x)'],
-        ['fib', 'VIII', 'Science', 'Matter', 'States', 'Easy', 'Water freezes at ____ degree Celsius and boils at ____ degree Celsius.', '', '', '', '', '', '', 'Blank 1:0|zero;Blank 2:100|one hundred', '', '', '', '', '', '', '', ''],
-        ['true_false', 'VII', 'Science', 'Plants', 'Photosynthesis', 'Easy', 'Plants release oxygen during photosynthesis.', '', '', '', '', '', 'true', '', '', '', '', '', '', '', '', ''],
-        ['short_answer', 'X', 'Physics', 'Electricity', 'Ohm Law', 'Medium', 'State Ohm law.', '', '', '', '', '', '', '', 'Voltage is directly proportional to current when resistance is constant.', '', '', '', '', '', '', '']
+    const examples = [
+        {
+            type: 'mcq', class: 'IX', subject: 'English', chapter: 'Reading', topic: 'Everyday Activities', difficulty: 'Easy',
+            question: 'Read: "Ravi walks to school every morning." How does Ravi travel to school?',
+            option_a: 'On foot', option_b: 'By bus', option_c: 'By bicycle', option_d: 'By car', correct_options: 'A',
+            language: 'Telugu', translated_question: 'చదవండి: "రవి ప్రతి ఉదయం పాఠశాలకు నడిచి వెళ్తాడు." రవి పాఠశాలకు ఎలా వెళ్తాడు?',
+            translated_answer: 'నడిచి', translated_option_a: 'నడిచి', translated_option_b: 'బస్సులో', translated_option_c: 'సైకిల్‌పై', translated_option_d: 'కారులో',
+            sectionId: 'example_class_ix_section_a', verified: 'false',
+            explanation: 'The passage says Ravi walks, so "On foot" is correct.',
+            explanationUrl: 'https://example.com/explanations/reading-everyday-activities',
+            skill: 'Reading', actfl_level: 'Novice Low', actfl_sublevel: 'Low', actfl_mode: 'Interpretive'
+        },
+        {
+            type: 'fib', class: 'IX', subject: 'English', chapter: 'Listening', topic: 'Introductions', difficulty: 'Easy',
+            question: 'Teacher reads aloud: "My name is Ravi. I live in Hyderabad." Complete: His name is ____ and he lives in ____.',
+            fib_banks: 'Blank 1:Ravi;Blank 2:Hyderabad',
+            language: 'Telugu', translated_question: 'ఉపాధ్యాయుడు బిగ్గరగా చదవాలి: "నా పేరు రవి. నేను హైదరాబాద్‌లో నివసిస్తున్నాను." పూర్తి చేయండి: అతని పేరు ____ మరియు అతను ____ లో నివసిస్తున్నాడు.',
+            translated_answer: 'రవి; హైదరాబాద్', sectionId: 'example_class_ix_section_a', verified: 'false',
+            explanation: 'The spoken introduction gives the name Ravi and the city Hyderabad.',
+            explanationUrl: 'https://example.com/explanations/listening-introductions',
+            skill: 'Listening', actfl_level: 'Novice Mid', actfl_sublevel: 'Mid', actfl_mode: 'Interpretive'
+        },
+        {
+            type: 'true_false', class: 'IX', subject: 'English', chapter: 'Speaking', topic: 'Greetings', difficulty: 'Easy',
+            question: 'In a spoken conversation, "How are you?" asks how the other person is feeling.', true_false_answer: 'true',
+            language: 'Telugu', translated_question: 'మౌఖిక సంభాషణలో "మీరు ఎలా ఉన్నారు?" అని అడగడం అవతలి వ్యక్తి ఎలా ఉన్నారో తెలుసుకోవడానికి ఉపయోగిస్తారు.',
+            translated_answer: 'నిజం', sectionId: 'example_class_ix_section_a', verified: 'false',
+            explanation: 'This greeting asks about the other person’s well-being and invites a response.',
+            explanationUrl: 'https://example.com/explanations/speaking-greetings',
+            skill: 'Speaking', actfl_level: 'Novice High', actfl_sublevel: 'High', actfl_mode: 'Interpersonal'
+        },
+        {
+            type: 'short_answer', class: 'IX', subject: 'English', chapter: 'Writing', topic: 'Personal Introductions', difficulty: 'Medium',
+            question: 'Write three sentences introducing yourself, your city, and one hobby.',
+            short_answer: 'My name is Ravi. I live in Hyderabad. I enjoy reading books.',
+            language: 'Telugu', translated_question: 'మీ పేరు, మీ నగరం మరియు మీకు ఇష్టమైన ఒక అభిరుచి గురించి మూడు వాక్యాలు రాయండి.',
+            translated_answer: 'నా పేరు రవి. నేను హైదరాబాద్‌లో నివసిస్తున్నాను. నాకు పుస్తకాలు చదవడం ఇష్టం.',
+            sectionId: 'example_class_ix_section_a', verified: 'false',
+            explanation: 'Accept clear sentences that state a name, a city, and a hobby; answers will vary.',
+            explanationUrl: 'https://example.com/explanations/writing-personal-introductions',
+            skill: 'Writing', actfl_level: 'Intermediate Low', actfl_sublevel: 'Low', actfl_mode: 'Presentational'
+        }
     ];
+    const sample = [TEMPLATE_HEADERS, ...examples.map(example => TEMPLATE_HEADERS.map(header => example[header] ?? ''))];
     downloadBlob(new Blob([toCsv(sample)], { type: 'text/csv;charset=utf-8' }), 'question-bank-template.csv');
 }
 
@@ -2423,6 +2522,15 @@ ${typeRequirement}
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
 - For translated content, fill language, translated_question, translated_answer, and translated_option_a through translated_option_d when relevant.
+- sectionId must be a supplied existing classSections document ID; leave blank if none is supplied. Never invent IDs.
+- verified must be false for AI-generated questions pending teacher review.
+- explanation must contain a teacher-facing explanation of the answer.
+- explanationUrl is optional; use only a supplied or verified explanation URL, otherwise leave blank.
+- skill stores the LSRW skill: ${QUESTION_METADATA_VALUES.skill.join(', ')}. Choose the skill assessed, or leave blank when not applicable.
+- actfl_level is optional and can be omitted or left blank. For this CSV, keep the header and leave the cell blank when not applicable. If provided, use exactly one of: ${QUESTION_METADATA_VALUES.actfl_level.join(', ')}.
+- actfl_sublevel must be Low, Mid, or High and match the suffix of actfl_level; leave blank for Superior, Distinguished, or an empty actfl_level.
+- actfl_mode must be one of ${QUESTION_METADATA_VALUES.actfl_mode.join(', ')}; leave blank when not applicable.
+- Do not invent authorUid, authorName, createdAt, updatedAt, or status columns; the importer assigns these. Taxonomy IDs are resolved from the selected class, subject, chapter, and topic labels.
 - Escape commas and quotation marks correctly according to CSV rules.
 - Return only valid CSV inside one csv code block.`;
 }
@@ -2477,21 +2585,49 @@ function promptTypeCount(id) {
 }
 
 async function copyPrompt() {
-    if (!isPromptTaxonomyComplete()) {
-        toast('Select class, subject, chapter, and at least one topic');
-        return;
-    }
-    await navigator.clipboard.writeText(els.aiPromptText.textContent);
-    toast('Prompt copied');
+    renderPrompt();
+    await copyTextToClipboard(els.aiPromptText.textContent, $('copyPromptStatus'), els.aiPromptText, 'Prompt');
 }
 
-function isPromptTaxonomyComplete() {
-    return Boolean(
-        $('promptClass').value
-        && $('promptSubject').value
-        && $('promptChapter').value
-        && $('promptTopic').selectedOptions.length
-    );
+async function copyTextToClipboard(text, status, selectionTarget, label = 'Invalid CSV rows') {
+    status.textContent = '';
+    try {
+        await navigator.clipboard.writeText(text);
+        status.textContent = `${label} copied`;
+        return;
+    } catch {
+        // Clipboard access may be unavailable or denied by the browser.
+    }
+
+    const previousFocus = document.activeElement;
+    const input = document.createElement('textarea');
+    input.value = text;
+    input.setAttribute('aria-label', `${label} to copy`);
+    input.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;';
+    // Keep the fallback inside the modal so it can receive focus.
+    els.importDialog.appendChild(input);
+    let copied = false;
+    try {
+        input.focus();
+        input.select();
+        copied = document.execCommand('copy');
+    } catch {
+        copied = false;
+    } finally {
+        input.remove();
+        previousFocus?.focus();
+    }
+    if (copied) {
+        status.textContent = `${label} copied`;
+        return;
+    }
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(selectionTarget);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    status.textContent = `Automatic copy unavailable. ${label} selected; press Ctrl+C or ⌘C to copy.`;
 }
 
 function clearFilters() {
@@ -2502,6 +2638,7 @@ function clearFilters() {
     Array.from(els.listFilter.options).forEach(option => {
         option.selected = false;
     });
+    renderMetadataFilterOptions();
     render();
 }
 

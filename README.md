@@ -57,7 +57,7 @@ Before production use:
 
 ## CSV Import
 
-Use the in-app `Templates` button to download the CSV template.
+Use `Download CSV Template` in the AI prompt dialog to download examples for all four question types. Every column has a populated example, including Telugu translations and the new metadata fields; fields that do not apply to a question type stay blank. Replace `example_class_ix_section_a` with a real `classSections` document ID (or leave it blank), and replace or clear the example.com explanation URLs before importing. The sample rows use `verified=false` pending teacher review.
 
 Important columns:
 
@@ -73,7 +73,11 @@ Important columns:
 - `true_false_answer`
 - `fib_banks`
 - `short_answer`
+- `sectionId`, `verified`, `explanation`, `explanationUrl`
+- `skill`, `actfl_level`, `actfl_sublevel`, `actfl_mode` (supported values are listed in `FIRESTORE_SCHEMA.md`)
 - translation columns such as `language`, `translated_question`, and translated options
+
+The AI prompt includes the new metadata columns. Imports validate supported skill and ACTFL values and store `verified` as a boolean (blank defaults to `false`). Older CSV files without metadata columns remain supported. Exports preserve these fields.
 
 For FIB questions, multiple banks use this format:
 

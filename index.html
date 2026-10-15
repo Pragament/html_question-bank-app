@@ -39,26 +39,26 @@
                 <input id="searchInput" type="search" placeholder="Question, answer, author" />
             </label>
             <label class="field">
-                <span>Class</span>
-                <select id="classFilter">
-                    <option value="">Any</option>
+                <span>Class (required)</span>
+                <select id="classFilter" required>
+                    <option value="">Select class</option>
                 </select>
             </label>
-            <label class="field">
+            <label class="field" hidden>
                 <span>Subject</span>
-                <select id="subjectFilter">
+                <select id="subjectFilter" disabled>
                     <option value="">Any</option>
                 </select>
             </label>
-            <label class="field">
+            <label class="field" hidden>
                 <span>Chapter</span>
-                <select id="chapterFilter">
+                <select id="chapterFilter" disabled>
                     <option value="">Any</option>
                 </select>
             </label>
-            <label class="field">
+            <label class="field" hidden>
                 <span>Topic</span>
-                <select id="topicFilter">
+                <select id="topicFilter" disabled>
                     <option value="">Any</option>
                 </select>
             </label>
@@ -293,7 +293,7 @@
                     <button class="btn primary" type="button" id="confirmImportBtn" disabled>Import Valid Rows</button>
                 </div>
             </div>
-            <details class="prompt-panel" open>
+            <details id="aiPromptBuilder" class="prompt-panel" open>
                 <summary>AI Prompt Builder</summary>
                 <div class="form-grid">
                     <label class="field">
@@ -353,6 +353,7 @@
                     <button class="btn" type="button" id="copyPromptBtn">Copy AI Prompt</button>
                     <button class="btn" type="button" id="downloadTemplateBtn">Download CSV Template</button>
                 </div>
+                <p id="copyPromptStatus" role="status" aria-live="polite"></p>
                 <pre id="aiPromptText"></pre>
             </details>
             <div id="importPreview" class="import-preview"></div>
