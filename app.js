@@ -84,7 +84,7 @@ const TEMPLATE_HEADERS = [
 
 const QUESTION_METADATA_VALUES = {
     skill: ['Listening', 'Speaking', 'Reading', 'Writing'],
-    actfl_level: ['Novice Low', 'Novice Mid', 'Novice High', 'Intermediate Low', 'Intermediate Mid', 'Intermediate High', 'Advanced Low', 'Advanced Mid', 'Advanced High', 'Superior', 'Distinguished'],
+    actfl_level: ['Novice', 'Intermediate', 'Advanced', 'Superior', 'Distinguished'],
     actfl_sublevel: ['Low', 'Mid', 'High'],
     actfl_mode: ['Interpersonal', 'Interpretive', 'Presentational']
 };
@@ -1289,6 +1289,7 @@ function openQuestionDialog(question = null) {
         return;
     }
     activeQuestionId = question?.id || null;
+    $('questionSaveStatus').textContent = '';
     els.questionDialogTitle.textContent = activeQuestionId ? 'Edit Question' : 'New Question';
     $('archiveQuestionBtn').hidden = !activeQuestionId;
     $('archiveQuestionBtn').textContent = question?.status === 'archived' ? 'Unarchive' : 'Archive';
@@ -1432,7 +1433,13 @@ function translationBlock(lang, value) {
 
 async function saveQuestion(event) {
     event.preventDefault();
-    if (!currentUser) return toast('Sign in required');
+    if ($('saveQuestionBtn').disabled) return;
+    const saveStatus = $('questionSaveStatus');
+    saveStatus.textContent = '';
+    if (!currentUser) {
+        saveStatus.textContent = 'Sign in to save this question.';
+        return;
+    }
     const type = $('qType').value;
     const existing = activeQuestionId ? questions.find(q => q.id === activeQuestionId) : null;
     if (existing && existing.authorUid !== currentUser.uid) return toast('Only the author can edit this question');
@@ -1476,22 +1483,41 @@ async function saveQuestion(event) {
     if (!taxonomyLabels.className || !taxonomyLabels.subject || !taxonomyLabels.chapter || !taxonomyLabels.topic || !stripHtml(payload.promptHtml)) {
         return toast('Class, subject, chapter, topic, and question are required');
     }
-    Object.assign(payload, await ensureTaxonomyPath(taxonomyLabels));
-    if (activeQuestionId) {
-        await updateDoc(doc(db, COLLECTIONS.questions, activeQuestionId), {
-            ...payload,
-            className: deleteField(),
-            subject: deleteField(),
-            chapter: deleteField(),
-            topic: deleteField()
-        });
-        toast('Question updated');
-    } else {
-        payload.createdAt = serverTimestamp();
-        await addDoc(collection(db, COLLECTIONS.questions), payload);
-        toast('Question created');
+    Object.assign(payload, {
+        classId: $('qClass').value,
+        subjectId: $('qSubject').value,
+        chapterId: $('qChapter').value,
+        topicId: $('qTopic').value
+    });
+    if (!existing) payload.verified = false;
+    const saveButton = $('saveQuestionBtn');
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving…';
+    try {
+        if (activeQuestionId) {
+            await updateDoc(doc(db, COLLECTIONS.questions, activeQuestionId), {
+                ...payload,
+                className: deleteField(),
+                subject: deleteField(),
+                chapter: deleteField(),
+                topic: deleteField()
+            });
+            toast('Question updated');
+        } else {
+            payload.createdAt = serverTimestamp();
+            await addDoc(collection(db, COLLECTIONS.questions), payload);
+            toast('Question created');
+        }
+        closeQuestionDialog();
+    } catch (error) {
+        console.error('Question save failed', error);
+        saveStatus.textContent = error.code === 'permission-denied' || error.code === 'firestore/permission-denied'
+            ? 'Question was not saved: Firestore denied permission to write qb_questions_v1. Check the deployed question create/update rules and your account or section permissions. Your entered content is still here.'
+            : `Question was not saved (${error.code || 'unknown error'}): ${error.message || 'Please try again.'} Your entered content is still here.`;
+    } finally {
+        saveButton.disabled = false;
+        saveButton.textContent = 'Save Question';
     }
-    closeQuestionDialog();
 }
 
 function collectTranslations() {
@@ -2310,9 +2336,6 @@ function importQuestionMetadata(row, question) {
     if (['Superior', 'Distinguished'].includes(level) && sublevel) {
         return 'actfl_sublevel must be blank for Superior or Distinguished';
     }
-    if (level && sublevel && !level.endsWith(` ${sublevel}`)) {
-        return 'actfl_sublevel must match actfl_level';
-    }
     return '';
 }
 
@@ -2453,7 +2476,7 @@ function downloadTemplateCsv() {
             sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'The passage says Ravi walks, so "On foot" is correct.',
             explanationUrl: 'https://example.com/explanations/reading-everyday-activities',
-            skill: 'Reading', actfl_level: 'Novice Low', actfl_sublevel: 'Low', actfl_mode: 'Interpretive'
+            skill: 'Reading', actfl_level: 'Novice', actfl_sublevel: 'Low', actfl_mode: 'Interpretive'
         },
         {
             type: 'fib', class: 'IX', subject: 'English', chapter: 'Listening', topic: 'Introductions', difficulty: 'Easy',
@@ -2463,7 +2486,7 @@ function downloadTemplateCsv() {
             translated_answer: 'రవి; హైదరాబాద్', sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'The spoken introduction gives the name Ravi and the city Hyderabad.',
             explanationUrl: 'https://example.com/explanations/listening-introductions',
-            skill: 'Listening', actfl_level: 'Novice Mid', actfl_sublevel: 'Mid', actfl_mode: 'Interpretive'
+            skill: 'Listening', actfl_level: 'Novice', actfl_sublevel: 'Mid', actfl_mode: 'Interpretive'
         },
         {
             type: 'true_false', class: 'IX', subject: 'English', chapter: 'Speaking', topic: 'Greetings', difficulty: 'Easy',
@@ -2472,7 +2495,7 @@ function downloadTemplateCsv() {
             translated_answer: 'నిజం', sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'This greeting asks about the other person’s well-being and invites a response.',
             explanationUrl: 'https://example.com/explanations/speaking-greetings',
-            skill: 'Speaking', actfl_level: 'Novice High', actfl_sublevel: 'High', actfl_mode: 'Interpersonal'
+            skill: 'Speaking', actfl_level: 'Novice', actfl_sublevel: 'High', actfl_mode: 'Interpersonal'
         },
         {
             type: 'short_answer', class: 'IX', subject: 'English', chapter: 'Writing', topic: 'Personal Introductions', difficulty: 'Medium',
@@ -2483,7 +2506,7 @@ function downloadTemplateCsv() {
             sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'Accept clear sentences that state a name, a city, and a hobby; answers will vary.',
             explanationUrl: 'https://example.com/explanations/writing-personal-introductions',
-            skill: 'Writing', actfl_level: 'Intermediate Low', actfl_sublevel: 'Low', actfl_mode: 'Presentational'
+            skill: 'Writing', actfl_level: 'Intermediate', actfl_sublevel: 'Low', actfl_mode: 'Presentational'
         }
     ];
     const sample = [TEMPLATE_HEADERS, ...examples.map(example => TEMPLATE_HEADERS.map(header => example[header] ?? ''))];
@@ -2528,7 +2551,7 @@ ${typeRequirement}
 - explanationUrl is optional; use only a supplied or verified explanation URL, otherwise leave blank.
 - skill stores the LSRW skill: ${QUESTION_METADATA_VALUES.skill.join(', ')}. Choose the skill assessed, or leave blank when not applicable.
 - actfl_level is optional and can be omitted or left blank. For this CSV, keep the header and leave the cell blank when not applicable. If provided, use exactly one of: ${QUESTION_METADATA_VALUES.actfl_level.join(', ')}.
-- actfl_sublevel must be Low, Mid, or High and match the suffix of actfl_level; leave blank for Superior, Distinguished, or an empty actfl_level.
+- actfl_sublevel is optional and can be omitted or left blank. When provided for Novice, Intermediate, or Advanced, use Low, Mid, or High. Leave blank for Superior, Distinguished, or an empty actfl_level. Store the level and sublevel separately, for example actfl_level=Novice and actfl_sublevel=Low; never put "Novice Low" in actfl_level.
 - actfl_mode must be one of ${QUESTION_METADATA_VALUES.actfl_mode.join(', ')}; leave blank when not applicable.
 - Do not invent authorUid, authorName, createdAt, updatedAt, or status columns; the importer assigns these. Taxonomy IDs are resolved from the selected class, subject, chapter, and topic labels.
 - Escape commas and quotation marks correctly according to CSV rules.

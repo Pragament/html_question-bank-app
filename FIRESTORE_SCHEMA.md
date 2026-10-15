@@ -58,7 +58,7 @@ Document shape:
   explanation: 'Teacher-facing explanation text',
   explanationUrl: 'https://example.com/explanation',
   skill: 'Listening',
-  actfl_level: 'Novice Low',
+  actfl_level: 'Novice',
   actfl_sublevel: 'Low',
   actfl_mode: 'Interpretive',
 
@@ -84,7 +84,7 @@ Notes:
 - Client-side filtering uses taxonomy IDs, `difficulty`, and `type`.
 - `sectionId` references a `classSections` document. `verified` records question verification.
 - `skill` stores the LSRW skill. Supported admin filter/import values are `Listening`, `Speaking`, `Reading`, and `Writing`.
-- `actfl_level` is optional and stores the proficiency level. Omit the CSV column or leave its cell blank when not applicable. Imports also treat `N/A`, `NA`, `None`, `null`, `not applicable`, and `-` as blank and normalize supported levels to their standard capitalization. Supported admin filter/import values are `Novice Low`, `Novice Mid`, `Novice High`, `Intermediate Low`, `Intermediate Mid`, `Intermediate High`, `Advanced Low`, `Advanced Mid`, `Advanced High`, `Superior`, and `Distinguished`.
+- `actfl_level` is optional and stores the proficiency level. Omit the CSV column or leave its cell blank when not applicable. Imports also treat `N/A`, `NA`, `None`, `null`, `not applicable`, and `-` as blank and normalize supported levels to their standard capitalization. Supported admin filter/import values are `Novice`, `Intermediate`, `Advanced`, `Superior`, and `Distinguished`. Level and sublevel are stored separately, for example `actfl_level: 'Novice'` and `actfl_sublevel: 'Low'`. Combined values such as `Novice Low` are rejected on import. Exports preserve the stored level and sublevel without conversion.
 - `actfl_sublevel` stores `Low`, `Mid`, or `High`; leave blank for `Superior` or `Distinguished`.
 - `actfl_mode` stores `Interpersonal`, `Interpretive`, or `Presentational`.
 
@@ -111,7 +111,7 @@ Document shape:
 Notes:
 
 - Taxonomy document IDs are deterministic from the label and parent path.
-- Saving or importing a question upserts the four taxonomy documents for its class, subject, chapter, and topic path.
+- The question form saves the selected taxonomy document IDs without rewriting taxonomy documents. Creating a chapter or topic writes taxonomy separately. CSV import currently upserts the four taxonomy documents for each imported path and requires taxonomy write permission.
 - Class documents use an empty `parentId`.
 - `verified` records taxonomy term verification.
 
@@ -230,3 +230,9 @@ See `firestore.rules` for a starter ruleset. It enforces:
 - signed-in user-only reactions,
 - private user-owned active and archived lists,
 - no hard delete for questions.
+
+## Shared-project rules deployment
+
+`firestore.rules` includes the shared student, classroom, section, submission, and question-bank rules. The student-only rules previously denied all question and taxonomy writes. The merged rules restore Question Bank Studio's existing policy: public published-question and taxonomy reads, signed-in author-owned question creation and updates, signed-in taxonomy creation and updates, and per-user reactions. Student access to lists and submissions and classroom/section permissions are preserved. Question and taxonomy deletion remain denied.
+
+Publish this complete rules file to the same Firebase project used by the app. Editing this repository does not change deployed Firebase rules. The question form does not require `sectionId` under these rules; classroom section validation remains separate.
