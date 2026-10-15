@@ -834,3 +834,32 @@ a {
         padding: 12px;
     }
 }
+
+.import-table-scroll {
+    max-width: 100%;
+    max-height: 420px;
+    overflow: auto;
+    margin: 12px 0;
+}
+
+.import-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    text-align: left;
+}
+
+.import-table th, .import-table td {
+    border: 1px solid var(--line);
+    padding: 8px;
+    min-width: 120px;
+    max-width: 320px;
+    overflow-wrap: anywhere;
+    vertical-align: top;
+}
+
+.import-table thead th {
+    position: sticky;
+    top: 0;
+    background: var(--panel-soft);
+}

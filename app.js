@@ -120,6 +120,7 @@ let savedSelectionRange = null;
 let activeTarget = null;
 let selectedTableCell = null;
 let importRows = [];
+let importPreviewCsv = null;
 let unsubscribeQuestions = [];
 let unsubscribeLists = null;
 let unsubscribeTaxonomy = null;
@@ -400,6 +401,12 @@ function bindEvents() {
     $('startOnboardingPromptBtn').addEventListener('click', startPromptedOnboarding);
     $('closeImportDialog').addEventListener('click', () => els.importDialog.close());
     $('previewImportBtn').addEventListener('click', previewImport);
+    $('csvPasteInput').addEventListener('input', () => {
+        importPreviewCsv = null;
+        importRows = [];
+        $('confirmImportBtn').disabled = true;
+        els.importPreview.textContent = 'CSV changed. Click Preview before importing.';
+    });
     $('confirmImportBtn').addEventListener('click', confirmImport);
     $('copyPromptBtn').addEventListener('click', copyPrompt);
     $('downloadTemplateBtn').addEventListener('click', downloadTemplateCsv);
@@ -408,7 +415,7 @@ function bindEvents() {
     els.listStatusFilter.addEventListener('change', renderLists);
     $('clearFiltersBtn').addEventListener('click', clearFilters);
 
-    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty'].forEach(id => {
+    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptCustomRequirements'].forEach(id => {
         $(id).addEventListener('input', renderPrompt);
         $(id).addEventListener('change', renderPrompt);
     });
@@ -2143,15 +2150,32 @@ async function renderMathAndDiagrams(root) {
     }
 }
 
-function previewImport() {
+async function previewImport() {
     $('aiPromptBuilder').open = false;
     const csv = $('csvPasteInput').value.trim();
+    importPreviewCsv = null;
+    importRows = [];
+    $('confirmImportBtn').disabled = true;
+    els.importPreview.textContent = 'Loading taxonomy for preview…';
+    try {
+        const snapshot = await getDocs(collection(db, COLLECTIONS.taxonomy));
+        taxonomy = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort(sortTaxonomyNodes);
+        taxonomyById = new Map(taxonomy.map(node => [node.id, node]));
+    } catch {
+        els.importPreview.textContent = 'Could not load taxonomy. Retry Preview before importing.';
+        return;
+    }
+    if ($('csvPasteInput').value.trim() !== csv) return;
     const result = parseCsvQuestions(csv);
     importRows = result.rows;
+    importPreviewCsv = csv;
     $('confirmImportBtn').disabled = !importRows.length || !currentUser;
     const invalidSection = result.errors.length ? buildInvalidCsvSection(csv, result.errors) : '';
     els.importPreview.innerHTML = `
         <strong>${importRows.length} valid row${importRows.length === 1 ? '' : 's'}</strong>
+        <p>Preview only. Firestore changes happen when you click Import Valid Rows.</p>
+        ${renderValidImportTable(importRows)}
+        ${renderImportTaxonomyPlan(importRows)}
         ${result.errors.length ? `
             <section class="card-answer">
                 <strong>Invalid CSV rows</strong>
@@ -2166,6 +2190,42 @@ function previewImport() {
             invalidSection, $('copyInvalidCsvStatus'), $('invalidCsvText')
         ));
     }
+}
+
+function renderValidImportTable(rows) {
+    if (!rows.length) return '<p>No valid questions to import.</p>';
+    const columns = [
+        ['Type', row => row.type],
+        ['Class / Subject / Chapter / Topic', row => Object.values(row.taxonomyLabels).join(' / ')],
+        ['Difficulty', row => row.difficulty],
+        ['Question', row => stripHtml(row.promptHtml)],
+        ['Options', row => row.options.map((option, i) => `${LABELS[i]}: ${stripHtml(option.html)}${option.correct ? ' (correct)' : ''}`).join(' | ')],
+        ['Answer', row => answerText(row)],
+        ['Section ID', row => row.sectionId],
+        ['Verified', row => String(row.verified)],
+        ['Explanation', row => row.explanation],
+        ['Explanation URL', row => row.explanationUrl],
+        ['Skill', row => row.skill],
+        ['ACTFL Level', row => row.actfl_level],
+        ['ACTFL Sublevel', row => row.actfl_sublevel],
+        ['ACTFL Mode', row => row.actfl_mode],
+        ['Translations', row => JSON.stringify(row.translations)]
+    ];
+    return `<div class="import-table-scroll"><table class="import-table"><caption>Valid questions to import</caption>
+        <thead><tr><th scope="col">#</th>${columns.map(([label]) => `<th scope="col">${esc(label)}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row, index) => `<tr><th scope="row">${index + 1}</th>${columns.map(([, value]) => `<td>${esc(value(row) || '')}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>`;
+}
+
+function renderImportTaxonomyPlan(rows) {
+    const missing = new Map();
+    rows.forEach(row => buildTaxonomyPath(row.taxonomyLabels).nodes.forEach(node => {
+        if (!taxonomyById.has(node.id)) missing.set(node.id, node);
+    }));
+    if (!missing.size) return '<h3>Taxonomy to create (0)</h3><p>No new taxonomy entries are needed.</p>';
+    return `<h3>Taxonomy to create (${missing.size})</h3>
+        <div class="import-table-scroll"><table class="import-table"><thead><tr><th scope="col">Type</th><th scope="col">Label</th><th scope="col">Document ID</th><th scope="col">Parent ID</th></tr></thead>
+        <tbody>${Array.from(missing.values()).map(node => `<tr><td>${esc(node.type)}</td><td>${esc(node.label)}</td><td>${esc(node.id)}</td><td>${esc(node.parentId || '—')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function buildInvalidCsvSection(csv, errors) {
@@ -2185,6 +2245,11 @@ function buildInvalidCsvSection(csv, errors) {
 
 async function confirmImport() {
     if (!currentUser) return toast('Sign in to import');
+    if (importPreviewCsv === null || importPreviewCsv !== $('csvPasteInput').value.trim() || !importRows.length) {
+        $('confirmImportBtn').disabled = true;
+        els.importPreview.textContent = 'Click Preview to review the current CSV before importing.';
+        return;
+    }
     const selectedListId = els.importListSelect.value;
     const importedQuestionIds = [];
     const taxonomyPathCache = new Map();
@@ -2217,6 +2282,7 @@ async function confirmImport() {
     $('csvFileInput').value = '';
     els.importListSelect.value = '';
     importRows = [];
+    importPreviewCsv = null;
     toast(selectedListId ? 'Questions imported and added to list' : 'Questions imported');
 }
 
@@ -2521,6 +2587,7 @@ function renderPrompt() {
     const topics = selectedPromptLabels('promptTopic');
     const typeRequirement = promptTypeRequirement();
     const difficulty = $('promptDifficulty')?.value || 'Mixed';
+    const customRequirements = $('promptCustomRequirements')?.value.trim() || '';
     const classRequirement = className ? `- class must be "${className}".` : '- select a class from the taxonomy before generating final CSV.';
     const subjectRequirement = subject ? `- subject must be "${subject}".` : '- select a subject from the selected class before generating final CSV.';
     const chapterRequirement = chapter ? `- chapter must be "${chapter}".` : '- select a chapter from the selected subject before generating final CSV.';
@@ -2530,21 +2597,28 @@ function renderPrompt() {
     const difficultyRequirement = difficulty === 'Mixed'
         ? '- include a balanced spread of Easy, Medium, and Hard questions.\n- each row\'s difficulty field must be exactly one of Easy, Medium, or Hard. Do not use Mixed as a row difficulty.'
         : `- difficulty must be "${difficulty}".\n- each row's difficulty field must exactly match "${difficulty}".`;
-    els.aiPromptText.textContent = `Create import-ready question bank rows as CSV.
+    els.aiPromptText.textContent = `Create import-ready question bank rows as CSV for students in India.
 Use exactly these headers:
 ${headers}
 
 Requirements:
+- Use only the existing taxonomy selected in the AI Prompt Builder, as listed below. Do not create, invent, rename, translate, abbreviate, or substitute any class, subject, chapter, or topic labels.
+- Copy taxonomy labels exactly, preserving spelling, capitalization, punctuation, and spacing. Put labels in the CSV taxonomy columns, not document IDs.
 ${classRequirement}
 ${subjectRequirement}
 ${chapterRequirement}
 ${topicRequirement}
+- Each row must use the selected class, subject, and chapter together, and exactly one of the selected topics. Do not add topics based on the question content or combine multiple topics in one cell.
+- If any class, subject, chapter, or topic selection is missing, ask for the missing selection and do not generate CSV or invent a replacement.
+- Hindi translations belong only in the translation columns; keep class, subject, chapter, and topic labels exactly as selected.
 ${difficultyRequirement}
 ${typeRequirement}
+- Write age-appropriate questions for students in India, aligned with the selected class, subject, chapter, and topics. Use familiar Indian contexts, names, places, metric units, and Indian rupees (₹) where relevant.
+- Keep the original question, options, and model answer in clear English and provide accurate Hindi translations in Devanagari for every row.
 - prefer more FIB and short_answer rows and fewer mcq and true_false rows to reduce student guesswork.
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
-- For translated content, fill language, translated_question, translated_answer, and translated_option_a through translated_option_d when relevant.
+- Set language to Hindi for every row. Fill translated_question and translated_answer with Hindi translations; for MCQs, also fill translated_option_a through translated_option_d in the same order as the English options. Preserve mathematical notation, numbers, blank positions, and the correct answers. Leave translated option columns blank for non-MCQ rows.
 - sectionId must be a supplied existing classSections document ID; leave blank if none is supplied. Never invent IDs.
 - verified must be false for AI-generated questions pending teacher review.
 - explanation must contain a teacher-facing explanation of the answer.
@@ -2555,7 +2629,12 @@ ${typeRequirement}
 - actfl_mode must be one of ${QUESTION_METADATA_VALUES.actfl_mode.join(', ')}; leave blank when not applicable.
 - Do not invent authorUid, authorName, createdAt, updatedAt, or status columns; the importer assigns these. Taxonomy IDs are resolved from the selected class, subject, chapter, and topic labels.
 - Escape commas and quotation marks correctly according to CSV rules.
-- Return only valid CSV inside one csv code block.`;
+- Return only valid CSV inside one csv code block.${customRequirements ? `
+
+Custom requirements:
+${customRequirements}
+
+Apply these custom requirements while preserving the selected taxonomy, CSV format, and metadata rules above.` : ''}`;
 }
 
 function selectedPromptLabel(id) {
