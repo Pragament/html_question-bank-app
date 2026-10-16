@@ -55,11 +55,7 @@ service cloud.firestore {
     function hasSectionRole(sectionData, role) {
       return signedIn()
         && request.auth.token.email is string
-        && sectionData.members is list
-        && sectionData.members.hasAny([{
-          email: request.auth.token.email.lower(),
-          role: role
-        }]);
+        && { 'email': request.auth.token.email.lower(), 'role': role } in sectionData.members;
     }
 
     function canViewSection(sectionData) {
@@ -208,6 +204,34 @@ service cloud.firestore {
         && resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerUid == resource.data.ownerUid;
       allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
+    }
+    
+    match /qb_reactions_v1/{reactionId} {
+      function validReactionSource(data) {
+        return data.sourceType is string && data.sourceValue is string
+          && ((data.sourceType == 'practice' && data.sourceValue == 'homepage')
+            || (data.sourceType == 'quiz-session'
+              && get(/databases/$(database)/documents/classrooms/$(data.sourceValue)).data.sectionId == profile().sectionId
+              && get(/databases/$(database)/documents/classrooms/$(data.sourceValue)).data.classEnabled == true
+              && get(/databases/$(database)/documents/classrooms/$(data.sourceValue)).data.get('archived', false) != true));
+      }
+      allow get: if activeStudent() && (resource == null || resource.data.userId == request.auth.uid);
+      allow list: if activeStudent() && resource.data.userId == request.auth.uid;
+      allow create, update: if activeStudent()
+        && request.resource.data.keys().hasAll(['questionId', 'userId', 'value', 'updatedAt', 'sourceType', 'sourceValue'])
+        && request.resource.data.keys().hasOnly(['questionId', 'userId', 'value', 'updatedAt', 'comment', 'sourceType', 'sourceValue'])
+        && validReactionSource(request.resource.data)
+        && request.resource.data.questionId is string
+        && request.resource.data.userId == request.auth.uid
+        && reactionId == request.resource.data.questionId + '__' + request.auth.uid
+        && (resource == null || (resource.data.userId == request.auth.uid
+          && resource.data.questionId == request.resource.data.questionId))
+        && request.resource.data.value in ['like', 'dislike']
+        && request.resource.data.updatedAt == request.time
+        && (!('comment' in request.resource.data)
+          || (request.resource.data.comment is string && request.resource.data.comment.size() <= 2000))
+        && get(/databases/$(database)/documents/qb_questions_v1/$(request.resource.data.questionId)).data.status == 'published';
+      allow delete: if false;
     }
 
     match /qb_quiz_submissions_v1/{submissionId} {
