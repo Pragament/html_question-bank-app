@@ -79,7 +79,8 @@ const TEMPLATE_HEADERS = [
     'skill',
     'actfl_level',
     'actfl_sublevel',
-    'actfl_mode'
+    'actfl_mode',
+    'translated_explanation'
 ];
 
 const QUESTION_METADATA_VALUES = {
@@ -1308,6 +1309,7 @@ function openQuestionDialog(question = null) {
     $('qType').value = question?.type || 'mcq';
     $('qStatus').value = question?.status === 'archived' ? question.previousStatus || 'published' : question?.status || 'published';
     $('qPrompt').innerHTML = sanitizeRich(question?.promptHtml || '');
+    $('qExplanation').value = question?.explanation || '';
     renderAnswerEditor(question);
     renderTranslations(question?.translations || {});
     activeEditor = null;
@@ -1433,6 +1435,7 @@ function translationBlock(lang, value) {
             </div>
             <label class="field"><span>Question</span><textarea class="translation-question" rows="2">${esc(value.question || '')}</textarea></label>
             <label class="field"><span>Answer</span><textarea class="translation-answer" rows="2">${esc(value.answer || '')}</textarea></label>
+            <label class="field"><span>Explanation (optional, teacher-facing)</span><textarea class="translation-explanation" rows="3">${esc(value.explanation || '')}</textarea></label>
             ${optionInputs}
         </div>
     `;
@@ -1461,6 +1464,7 @@ async function saveQuestion(event) {
         difficulty: $('qDifficulty').value,
         status: $('qStatus').value,
         promptHtml: sanitizeRich($('qPrompt').innerHTML),
+        explanation: $('qExplanation').value.trim(),
         options: [],
         trueAnswer: true,
         fibBanks: [],
@@ -1534,6 +1538,7 @@ function collectTranslations() {
         out[lang] = {
             question: card.querySelector('.translation-question').value.trim(),
             answer: card.querySelector('.translation-answer').value.trim(),
+            explanation: card.querySelector('.translation-explanation').value.trim(),
             options: Array.from(card.querySelectorAll('.translation-option')).map(input => input.value.trim())
         };
     });
@@ -2370,6 +2375,7 @@ function parseCsvQuestions(text) {
             question.translations[row.language] = {
                 question: row.translated_question || '',
                 answer: row.translated_answer || '',
+                explanation: row.translated_explanation || '',
                 options: LABELS.map(label => row[`translated_option_${label.toLowerCase()}`] || '')
             };
         }
@@ -2517,13 +2523,14 @@ function exportFilteredCsv() {
             '',
             ''
         ];
-        base.push(q.sectionId || '', typeof q.verified === 'boolean' ? String(q.verified) : '', q.explanation || '', q.explanationUrl || '', q.skill || '', q.actfl_level || '', q.actfl_sublevel || '', q.actfl_mode || '');
+        base.push(q.sectionId || '', typeof q.verified === 'boolean' ? String(q.verified) : '', q.explanation || '', q.explanationUrl || '', q.skill || '', q.actfl_level || '', q.actfl_sublevel || '', q.actfl_mode || '', '');
         rows.push(base);
         Object.entries(q.translations || {}).forEach(([lang, t]) => {
             const translated = [...base];
             translated[15] = lang;
             translated[16] = t.question || '';
             translated[17] = t.answer || '';
+            translated[TEMPLATE_HEADERS.indexOf('translated_explanation')] = t.explanation || '';
             LABELS.forEach((_, i) => translated[18 + i] = t.options?.[i] || '');
             rows.push(translated);
         });
@@ -2538,7 +2545,7 @@ function downloadTemplateCsv() {
             question: 'Read: "Ravi walks to school every morning." How does Ravi travel to school?',
             option_a: 'On foot', option_b: 'By bus', option_c: 'By bicycle', option_d: 'By car', correct_options: 'A',
             language: 'Telugu', translated_question: 'చదవండి: "రవి ప్రతి ఉదయం పాఠశాలకు నడిచి వెళ్తాడు." రవి పాఠశాలకు ఎలా వెళ్తాడు?',
-            translated_answer: 'నడిచి', translated_option_a: 'నడిచి', translated_option_b: 'బస్సులో', translated_option_c: 'సైకిల్‌పై', translated_option_d: 'కారులో',
+            translated_explanation: 'రవి నడిచి వెళ్తాడని వాక్యం చెబుతోంది.', translated_answer: 'నడిచి', translated_option_a: 'నడిచి', translated_option_b: 'బస్సులో', translated_option_c: 'సైకిల్‌పై', translated_option_d: 'కారులో',
             sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'The passage says Ravi walks, so "On foot" is correct.',
             explanationUrl: 'https://example.com/explanations/reading-everyday-activities',
@@ -2549,7 +2556,7 @@ function downloadTemplateCsv() {
             question: 'Teacher reads aloud: "My name is Ravi. I live in Hyderabad." Complete: His name is ____ and he lives in ____.',
             fib_banks: 'Blank 1:Ravi;Blank 2:Hyderabad',
             language: 'Telugu', translated_question: 'ఉపాధ్యాయుడు బిగ్గరగా చదవాలి: "నా పేరు రవి. నేను హైదరాబాద్‌లో నివసిస్తున్నాను." పూర్తి చేయండి: అతని పేరు ____ మరియు అతను ____ లో నివసిస్తున్నాడు.',
-            translated_answer: 'రవి; హైదరాబాద్', sectionId: 'example_class_ix_section_a', verified: 'false',
+            translated_explanation: 'పరిచయంలో పేరు రవి అని, నగరం హైదరాబాద్ అని చెప్పారు.', translated_answer: 'రవి; హైదరాబాద్', sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'The spoken introduction gives the name Ravi and the city Hyderabad.',
             explanationUrl: 'https://example.com/explanations/listening-introductions',
             skill: 'Listening', actfl_level: 'Novice', actfl_sublevel: 'Mid', actfl_mode: 'Interpretive'
@@ -2558,7 +2565,7 @@ function downloadTemplateCsv() {
             type: 'true_false', class: 'IX', subject: 'English', chapter: 'Speaking', topic: 'Greetings', difficulty: 'Easy',
             question: 'In a spoken conversation, "How are you?" asks how the other person is feeling.', true_false_answer: 'true',
             language: 'Telugu', translated_question: 'మౌఖిక సంభాషణలో "మీరు ఎలా ఉన్నారు?" అని అడగడం అవతలి వ్యక్తి ఎలా ఉన్నారో తెలుసుకోవడానికి ఉపయోగిస్తారు.',
-            translated_answer: 'నిజం', sectionId: 'example_class_ix_section_a', verified: 'false',
+            translated_explanation: 'ఈ పలకరింపు అవతలి వ్యక్తి క్షేమాన్ని అడుగుతుంది.', translated_answer: 'నిజం', sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'This greeting asks about the other person’s well-being and invites a response.',
             explanationUrl: 'https://example.com/explanations/speaking-greetings',
             skill: 'Speaking', actfl_level: 'Novice', actfl_sublevel: 'High', actfl_mode: 'Interpersonal'
@@ -2568,7 +2575,7 @@ function downloadTemplateCsv() {
             question: 'Write three sentences introducing yourself, your city, and one hobby.',
             short_answer: 'My name is Ravi. I live in Hyderabad. I enjoy reading books.',
             language: 'Telugu', translated_question: 'మీ పేరు, మీ నగరం మరియు మీకు ఇష్టమైన ఒక అభిరుచి గురించి మూడు వాక్యాలు రాయండి.',
-            translated_answer: 'నా పేరు రవి. నేను హైదరాబాద్‌లో నివసిస్తున్నాను. నాకు పుస్తకాలు చదవడం ఇష్టం.',
+            translated_explanation: 'పేరు, నగరం మరియు అభిరుచిని తెలిపే స్పష్టమైన వాక్యాలను అంగీకరించండి.', translated_answer: 'నా పేరు రవి. నేను హైదరాబాద్‌లో నివసిస్తున్నాను. నాకు పుస్తకాలు చదవడం ఇష్టం.',
             sectionId: 'example_class_ix_section_a', verified: 'false',
             explanation: 'Accept clear sentences that state a name, a city, and a hobby; answers will vary.',
             explanationUrl: 'https://example.com/explanations/writing-personal-introductions',
@@ -2618,7 +2625,7 @@ ${typeRequirement}
 - prefer more FIB and short_answer rows and fewer mcq and true_false rows to reduce student guesswork.
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
-- Set language to Hindi for every row. Fill translated_question and translated_answer with Hindi translations; for MCQs, also fill translated_option_a through translated_option_d in the same order as the English options. Preserve mathematical notation, numbers, blank positions, and the correct answers. Leave translated option columns blank for non-MCQ rows.
+- Set language to Hindi for every row. Fill translated_question, translated_answer, and translated_explanation with Hindi translations of the question, answer, and teacher-facing explanation; for MCQs, also fill translated_option_a through translated_option_d in the same order as the English options. Preserve mathematical notation, numbers, blank positions, and the correct answers. Leave translated option columns blank for non-MCQ rows.
 - sectionId must be a supplied existing classSections document ID; leave blank if none is supplied. Never invent IDs.
 - verified must be false for AI-generated questions pending teacher review.
 - explanation must contain a teacher-facing explanation of the answer.

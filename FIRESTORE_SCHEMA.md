@@ -62,9 +62,14 @@ Document shape:
   actfl_sublevel: 'Low',
   actfl_mode: 'Interpretive',
 
-  // Optional language translations for question and answer content.
+  // Optional language translations for question, answer, and explanation content.
   translations: {
-    Telugu: { question: '', options: [''], answer: '' }
+    Hindi: {
+      question: 'प्रश्न का अनुवाद',
+      options: ['विकल्प का अनुवाद'],
+      answer: 'उत्तर का अनुवाद',
+      explanation: 'शिक्षक के लिए उत्तर की व्याख्या'
+    }
   },
 
   authorUid: 'firebase-auth-uid',
@@ -77,6 +82,8 @@ Document shape:
 
 Notes:
 
+- `explanation` stores optional teacher-facing plain text, separate from `shortAnswerHtml` (the model answer). The create/edit form supports explanations for every question type.
+- `translations[language].explanation` stores the optional translated teacher-facing explanation as plain text. CSV import/export uses `translated_explanation`; the AI prompt requests Hindi explanations. Missing explanations are treated as empty.
 - `promptHtml`, `options[].html`, and `shortAnswerHtml` can contain rich editor HTML for bold, italic, code blocks, inline images, equations, tables, and Mermaid diagram placeholders/rendered content.
 - Inline images are stored inside the document as data URLs. Keep images small because Firestore documents have a 1 MiB size limit.
 - New and edited questions store taxonomy reference IDs for class, subject, chapter, and topic. Legacy label fields are still read by the client as a fallback during migration.
