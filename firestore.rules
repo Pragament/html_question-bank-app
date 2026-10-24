@@ -141,6 +141,24 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Passages become public when first used by a published question.
+    // Keep them readable for other published questions when one child is archived.
+    match /qb_comprehensions_v1/{comprehensionId} {
+      allow read: if resource.data.published == true
+        || (signedIn() && resource.data.authorUid == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.authorUid == request.auth.uid
+        && request.resource.data.passageHtml is string
+        && request.resource.data.published is bool;
+      allow update: if signedIn()
+        && resource.data.authorUid == request.auth.uid
+        && request.resource.data.authorUid == resource.data.authorUid
+        && request.resource.data.passageHtml is string
+        && request.resource.data.published is bool
+        && (resource.data.published == false || request.resource.data.published == true);
+      allow delete: if false;
+    }
+
     match /qb_questions_v1/{questionId} {
       // Published questions are public in Question Bank Studio.
       allow read: if resource.data.status == 'published'

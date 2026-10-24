@@ -21,7 +21,7 @@
             <button class="btn" id="onboardingBtn">Guide</button>
             <button class="btn" id="templatesBtn" hidden>Templates</button>
             <button class="btn" id="importBtn" hidden>Import</button>
-            <button class="btn" id="exportBtn" hidden>Export CSV</button>
+            <button class="btn" id="exportBtn" hidden>Export Page CSV</button>
             <button class="btn primary" id="newQuestionBtn" hidden>New Question</button>
             <button class="btn" id="loginBtn">Google Login</button>
             <button class="btn" id="logoutBtn" hidden>Logout</button>
@@ -35,8 +35,8 @@
                 <button class="icon-btn" id="clearFiltersBtn" title="Clear filters">Clear</button>
             </div>
             <label class="field">
-                <span>Search</span>
-                <input id="searchInput" type="search" placeholder="Question, answer, author" />
+                <span>Author name (exact match)</span>
+                <input id="searchInput" type="search" placeholder="Exact author name" />
             </label>
             <label class="field">
                 <span>Class (required)</span>
@@ -82,13 +82,20 @@
                     <option value="short_answer">Short Answer</option>
                 </select>
             </label>
-            <label class="field">
+            <label class="field" hidden>
                 <span>Minimum Likes</span>
                 <input id="likesFilter" type="number" min="0" step="1" placeholder="Any" />
             </label>
-            <label class="field">
+            <label class="field" hidden>
                 <span>Minimum Dislikes</span>
                 <input id="dislikesFilter" type="number" min="0" step="1" placeholder="Any" />
+            </label>
+            <label class="field">
+                <span>List Filter Mode</span>
+                <select id="listFilterMode">
+                    <option value="include">Include selected lists</option>
+                    <option value="exclude">Exclude selected lists</option>
+                </select>
             </label>
             <label class="field">
                 <span>Lists</span>
@@ -103,6 +110,7 @@
                     <option value="all">Published + Mine</option>
                 </select>
             </label>
+            <button id="applyFiltersBtn" class="btn primary" type="button">Apply Filters</button>
         </aside>
 
         <section class="content-panel">
@@ -118,7 +126,22 @@
             </div>
 
             <section id="bankView">
+                <div class="content-toolbar">
+                    <label>View <select id="questionDisplayMode"><option value="cards">Cards</option><option value="table">Table</option></select></label>
+                    <label>Questions per page <select id="questionsPerPage"><option>10</option><option selected>20</option><option>25</option><option>50</option></select></label>
+                    <span>Click Apply Filters to apply page size changes.</span>
+                </div>
+                <div id="bulkArchiveToolbar" class="content-toolbar" hidden>
+                    <label><input id="selectAllFilteredQuestions" type="checkbox"> Select all on this page</label>
+                    <span id="bulkArchiveCount">0 selected</span>
+                    <button id="previewBulkArchiveBtn" class="btn danger" type="button" disabled>Preview Archive</button>
+                </div>
                 <div class="question-grid" id="questionGrid"></div>
+                <div class="content-toolbar">
+                    <button id="previousQuestionPage" type="button" class="btn" disabled>Previous</button>
+                    <span id="questionPageLabel">Page 1</span>
+                    <button id="nextQuestionPage" type="button" class="btn" disabled>Next</button>
+                </div>
             </section>
 
             <section id="listsView" hidden>
@@ -138,12 +161,46 @@
         </section>
     </main>
 
+    <dialog id="bulkArchiveDialog" class="modal">
+        <div class="modal-card">
+            <h2>Preview Bulk Archive</h2>
+            <p>No changes have been made. Confirm to archive the questions listed below.</p>
+            <div id="bulkArchivePreview"></div>
+            <p id="bulkArchiveStatus" role="status" aria-live="polite"></p>
+            <div class="modal-actions">
+                <button id="cancelBulkArchiveBtn" class="btn" type="button">Cancel</button>
+                <button id="confirmBulkArchiveBtn" class="btn danger" type="button">Confirm Archive</button>
+            </div>
+        </div>
+    </dialog>
+
     <dialog id="questionDialog" class="modal">
         <form method="dialog" class="modal-card" id="questionForm">
             <div class="modal-head">
                 <h2 id="questionDialogTitle">New Question</h2>
                 <button class="icon-btn" value="cancel" type="button" id="closeQuestionDialog">Close</button>
             </div>
+
+            <label class="field" id="comprehensionModeField">
+                <span>Question format</span>
+                <select id="qFormat"><option value="single">Single question</option><option value="comprehension">Comprehension — one description, multiple questions</option></select>
+            </label>
+            <section id="comprehensionEditor" class="editor-section" hidden>
+                <label class="field"><span>Shared description / passage</span></label>
+                <div class="rich-toolbar" data-toolbar-for="qPassage">
+                    <button type="button" data-command="bold"><b>B</b></button>
+                    <button type="button" data-command="italic"><i>I</i></button>
+                    <button type="button" data-insert="image">Image</button>
+                    <button type="button" data-insert="table">Table</button>
+                </div>
+                <div id="qPassage" class="rich-editor" contenteditable="true" role="textbox" aria-label="Shared description or passage" aria-multiline="true"></div>
+                <p id="comprehensionHelp">Class, subject, chapter, topic, and status apply to all questions.</p>
+                <div class="comprehension-navigation" id="comprehensionNavigation">
+                    <label class="field"><span>Current question</span><select id="comprehensionQuestion"></select></label>
+                    <button type="button" class="btn" id="addComprehensionQuestion">Add question</button>
+                    <button type="button" class="btn danger" id="removeComprehensionQuestion">Remove question</button>
+                </div>
+            </section>
 
             <div class="form-grid">
                 <label class="field">

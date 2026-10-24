@@ -204,24 +204,19 @@ These values are local to the browser and are not synced through Firestore.
 
 ## Query Patterns
 
-Current app subscriptions:
+Homepage question queries execute only after Apply Filters or a pagination action (and refresh after mutations). Class selection is required. Taxonomy IDs, difficulty, type, exact `authorName`, visibility, and supported list membership filters are applied in Firestore. Questions use document-ID ordering and snapshot cursors with `limit(pageSize + 1)` to detect the next page. Page size options are 10, 20, 25, and 50; at most 50 questions are displayed. The extra document is a lookahead, not a displayed row. Previous pages reuse saved cursors.
 
-- Anonymous users:
-  - `qb_questions_v1 where status == "published"`
-- Signed-in users:
-  - `qb_questions_v1 where status == "published"`
-  - `qb_questions_v1 where authorUid == currentUser.uid`
-  - `qb_lists_v1 where ownerUid == currentUser.uid`
-- Taxonomy:
-  - `qb_taxonomy_v1`
-- Reactions:
-  - `qb_reactions_v1 where questionId in [visible question ids]`
+The homepage does not subscribe to or download all questions. CSV export and bulk selection operate on the loaded page. Card/table view changes do not query Firestore. Reaction counts are loaded only for the page; reaction-count filters are hidden. Search matches the full author name exactly and is case-sensitive.
 
-The app sorts question and list results by `updatedAt` on the client.
+Visibility queries: Published uses `status == published`; My Questions uses the current author's UID and `status in [published, draft]`; My Archived uses the current author's UID and `status == archived`; Published + Mine uses a Firestore OR of published questions and the author's drafts.
+
+List filters use `documentId() in` or `not-in` against IDs in selected list documents. Include supports up to 30 IDs (15 when combined with My Questions or Published + Mine); exclude supports up to 10 IDs and requires Published or My Archived visibility. Unsupported combinations display an error without client-side filtering. Larger list filtering requires a future membership data model change.
+
+Other subscriptions remain taxonomy, the signed-in user's lists, and page-specific reactions.
 
 ## Suggested Indexes
 
-The current implementation avoids compound ordered queries for easier setup. If you later move more filtering into Firestore, useful composite indexes may include:
+Firestore may require composite indexes for combinations of taxonomy, visibility, author-name, and list filters. Query failures are displayed with the Firebase error and its index-creation link text; create required indexes in the Firebase console before retrying. No indexes are deployed automatically. If you later move more filtering into Firestore, useful composite indexes may include:
 
 - `qb_questions_v1`: `status`, `classId`, `subjectId`, `updatedAt desc`
 - `qb_questions_v1`: `status`, `type`, `difficulty`, `updatedAt desc`
@@ -243,3 +238,13 @@ See `firestore.rules` for a starter ruleset. It enforces:
 `firestore.rules` includes the shared student, classroom, section, submission, and question-bank rules. The student-only rules previously denied all question and taxonomy writes. The merged rules restore Question Bank Studio's existing policy: public published-question and taxonomy reads, signed-in author-owned question creation and updates, signed-in taxonomy creation and updates, and per-user reactions. Student access to lists and submissions and classroom/section permissions are preserved. Question and taxonomy deletion remain denied.
 
 Publish this complete rules file to the same Firebase project used by the app. Editing this repository does not change deployed Firebase rules. The question form does not require `sectionId` under these rules; classroom section validation remains separate.
+
+### Comprehension creation
+
+The new-question form atomically creates one `/qb_comprehensions_v1/{comprehensionId}` document and 2–100 standard questions. The passage document stores `passageHtml`, `authorUid`, `published`, `createdAt`, and `updatedAt`. Questions store only their own text in `promptHtml`, with `comprehensionId` referencing the passage and `comprehensionIndex` specifying their original order. No passage HTML is duplicated in question documents.
+
+Editing any linked question exposes the shared passage. Saving atomically updates that question and the single passage document, so all linked questions display the edited passage when loaded. Question cards, tables, lists, and CSV exports resolve references before rendering. External quiz consumers must fetch `qb_comprehensions_v1/{question.comprehensionId}` and prepend `passageHtml` for display; they must not assume `promptHtml` contains the passage.
+
+Passages are private to their author until a question is published. `published` is sticky after first publication so archiving or drafting one question does not break other published references. The passage author alone can edit it. Deploy the accompanying Firestore rules before using reference-based comprehensions.
+
+Legacy questions containing `comprehensionPassageHtml` retain their embedded passage and render as before. Existing data is not migrated automatically.

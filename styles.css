@@ -863,3 +863,11 @@ a {
     top: 0;
     background: var(--panel-soft);
 }
+
+.question-grid.table-view { display: block; min-width: 0; }
+
+.comprehension-navigation { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.comprehension-navigation .field { flex: 1; min-width: 160px; }
+#comprehensionEditor[hidden] { display: none; }
+
+.comprehension-navigation[hidden] { display: none; }

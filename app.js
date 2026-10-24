@@ -1,3 +1,5 @@
+import { PASSAGES_COLLECTION, referencesPassage, loadPassages, questionPromptHtml } from './comprehension.js';
+
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
     getAuth,
@@ -13,6 +15,12 @@ import {
     deleteField,
     doc,
     getDocs,
+    documentId,
+    orderBy,
+    startAfter,
+    limit,
+    and,
+    or,
     getFirestore,
     onSnapshot,
     query,
@@ -32,6 +40,9 @@ const firebaseConfig = {
     appId: '1:875648503944:web:ea0d256e7aa977496f0f3d',
     measurementId: 'G-CF82P2M36M'
 };
+
+let comprehensionPassages = new Map();
+const displayPrompt = question => questionPromptHtml(question, comprehensionPassages);
 
 const COLLECTIONS = {
     questions: 'qb_questions_v1',
@@ -111,6 +122,15 @@ const db = getFirestore(app);
 
 let currentUser = null;
 let questions = [];
+let appliedFilters = null;
+let questionPage = 0;
+let questionPageCursors = [null];
+let questionPageLast = null;
+let questionPageHasNext = false;
+let questionPageLoading = false;
+let questionQueryVersion = 0;
+let questionPageError = '';
+let appliedPageSize = 20;
 let reactions = new Map();
 let lists = [];
 let taxonomy = [];
@@ -120,9 +140,11 @@ let activeEditor = null;
 let savedSelectionRange = null;
 let activeTarget = null;
 let selectedTableCell = null;
+let selectedArchiveIds = new Set();
+let bulkArchivePreviewRows = [];
+let bulkArchiveSaving = false;
 let importRows = [];
 let importPreviewCsv = null;
-let unsubscribeQuestions = [];
 let unsubscribeLists = null;
 let unsubscribeTaxonomy = null;
 let toastTimer = null;
@@ -339,6 +361,23 @@ onAuthStateChanged(auth, (user) => {
 });
 
 function bindEvents() {
+    $('selectAllFilteredQuestions').addEventListener('change', event => {
+        selectedArchiveIds = new Set(event.target.checked ? bulkArchiveCandidates().map(q => q.id) : []);
+        render();
+    });
+    $('previewBulkArchiveBtn').addEventListener('click', previewBulkArchive);
+    $('confirmBulkArchiveBtn').addEventListener('click', confirmBulkArchive);
+    $('cancelBulkArchiveBtn').addEventListener('click', () => $('bulkArchiveDialog').close());
+    $('bulkArchiveDialog').addEventListener('cancel', event => {
+        if (bulkArchiveSaving) event.preventDefault();
+    });
+    els.questionGrid.addEventListener('change', event => {
+        const id = event.target.dataset.archiveSelect;
+        if (!id) return;
+        if (event.target.checked) selectedArchiveIds.add(id);
+        else selectedArchiveIds.delete(id);
+        render();
+    });
     els.loginBtn.addEventListener('click', async () => {
         await signInWithPopup(auth, new GoogleAuthProvider());
     });
@@ -356,6 +395,22 @@ function bindEvents() {
     $('archiveQuestionBtn').addEventListener('click', archiveActiveQuestion);
     els.questionForm.addEventListener('submit', saveQuestion);
     $('qType').addEventListener('change', () => renderAnswerEditor());
+    $('qFormat').addEventListener('change', setComprehensionMode);
+    $('comprehensionQuestion').addEventListener('change', event => {
+        comprehensionQuestions[comprehensionIndex] = collectQuestionContent();
+        showComprehensionQuestion(Number(event.target.value));
+    });
+    $('addComprehensionQuestion').addEventListener('click', () => {
+        if (comprehensionQuestions.length >= 100) return toast('A comprehension can contain up to 100 questions');
+        comprehensionQuestions[comprehensionIndex] = collectQuestionContent();
+        comprehensionQuestions.push({});
+        showComprehensionQuestion(comprehensionQuestions.length - 1);
+    });
+    $('removeComprehensionQuestion').addEventListener('click', () => {
+        if (comprehensionQuestions.length <= 2) return;
+        comprehensionQuestions.splice(comprehensionIndex, 1);
+        showComprehensionQuestion(Math.min(comprehensionIndex, comprehensionQuestions.length - 1));
+    });
     $('qClass').addEventListener('change', () => {
         $('qSubject').value = '';
         $('qChapter').value = '';
@@ -451,8 +506,13 @@ function bindEvents() {
         event.preventDefault();
         addPromptTopic();
     });
-    filterIds.forEach(id => $(id).addEventListener('input', render));
-    filterIds.forEach(id => $(id).addEventListener('change', render));
+    $('applyFiltersBtn').addEventListener('click', applyQuestionFilters);
+    $('questionDisplayMode').addEventListener('change', render);
+    $('previousQuestionPage').addEventListener('click', () => loadQuestionPage(questionPage - 1));
+    $('nextQuestionPage').addEventListener('click', () => {
+        questionPageCursors[questionPage + 1] = questionPageLast;
+        loadQuestionPage(questionPage + 1);
+    });
     ['classFilter', 'subjectFilter', 'chapterFilter'].forEach(id => {
         $(id).addEventListener('change', () => {
             const descendants = {
@@ -462,10 +522,8 @@ function bindEvents() {
             };
             descendants[id].forEach(childId => { $(childId).value = ''; });
             renderMetadataFilterOptions();
-            render();
         });
     });
-    els.listFilter.addEventListener('change', render);
 
     document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => switchView(tab.dataset.view));
@@ -736,40 +794,97 @@ function saveOnboardingPromptPreference() {
 }
 
 function listenForQuestions() {
-    unsubscribeQuestions.forEach(unsubscribe => unsubscribe());
-    unsubscribeQuestions = [];
-    const byId = new Map();
-    const refresh = async () => {
-        questions = Array.from(byId.values()).sort((a, b) => {
-            const aTime = a.updatedAt?.toMillis?.() || 0;
-            const bTime = b.updatedAt?.toMillis?.() || 0;
-            return bTime - aTime;
-        });
-        els.syncStatus.textContent = `Firestore: ${COLLECTIONS.questions}`;
-        await loadReactions();
-        renderMetadataFilterOptions();
-        render();
-    };
-    const base = collection(db, COLLECTIONS.questions);
-    unsubscribeQuestions.push(onSnapshot(query(base, where('status', '==', 'published')), async (snapshot) => {
-        snapshot.docChanges().forEach(change => {
-            if (change.type === 'removed') byId.delete(change.doc.id);
-            else byId.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
-        });
-        await refresh();
-    }, (error) => {
-        els.syncStatus.textContent = `Firestore error: ${error.message}`;
-        render();
-    }));
-    if (currentUser) {
-        unsubscribeQuestions.push(onSnapshot(query(base, where('authorUid', '==', currentUser.uid)), async (snapshot) => {
-            snapshot.docChanges().forEach(change => {
-                if (change.type === 'removed') byId.delete(change.doc.id);
-                else byId.set(change.doc.id, { id: change.doc.id, ...change.doc.data() });
-            });
-            await refresh();
-        }));
+    applyQuestionFilters();
+}
+
+function applyQuestionFilters() {
+    appliedFilters = Object.fromEntries(filterIds.map(id => [id, $(id).value.trim()]));
+    appliedFilters.listIds = getSelectedListIds();
+    appliedFilters.listMode = $('listFilterMode').value;
+    appliedFilters.uid = currentUser?.uid || null;
+    appliedPageSize = Math.min(50, Math.max(1, Number($('questionsPerPage').value) || 20));
+    questionPageCursors = [null];
+    selectedArchiveIds.clear();
+    loadQuestionPage(0);
+}
+
+function buildQuestionConstraints(filters) {
+    const constraints = [];
+    for (const [input, field] of [['classFilter', 'classId'], ['subjectFilter', 'subjectId'], ['chapterFilter', 'chapterId'], ['topicFilter', 'topicId'], ['difficultyFilter', 'difficulty'], ['typeFilter', 'type']]) {
+        if (filters[input]) constraints.push(where(field, '==', filters[input]));
     }
+    const owned = filters.uid ? where('authorUid', '==', filters.uid) : null;
+    const published = where('status', '==', 'published');
+    if (filters.visibilityFilter === 'mine' || filters.visibilityFilter === 'archived') {
+        if (!owned) throw new Error('Sign in to view your questions.');
+        constraints.push(owned, filters.visibilityFilter === 'archived' ? where('status', '==', 'archived') : where('status', 'in', ['published', 'draft']));
+    } else if (filters.visibilityFilter === 'all' && owned) {
+        constraints.push(or(published, and(owned, where('status', '==', 'draft'))));
+    } else constraints.push(published);
+    if (filters.searchInput) constraints.push(where('authorName', '==', filters.searchInput));
+
+    const ids = [...new Set(lists.filter(list => filters.listIds.includes(list.id)).flatMap(list => list.questionIds || []))];
+    if (filters.listIds.length) {
+        if (filters.listMode === 'include' && !ids.length) return null;
+        if (ids.length) {
+            // These limits keep the complete filter in Firestore, without downloading and filtering results.
+            const maximum = filters.listMode === 'exclude' ? 10 : (filters.visibilityFilter === 'all' || filters.visibilityFilter === 'mine' ? 15 : 30);
+            if (ids.length > maximum) throw new Error(`This list filter has ${ids.length} question IDs. Firestore supports up to ${maximum} for this query. Larger lists require server-maintained list membership on question documents.`);
+            if (filters.listMode === 'exclude' && ['all', 'mine'].includes(filters.visibilityFilter)) throw new Error('Exclude lists currently requires Published or My Archived visibility due to Firestore query operator limits.');
+            constraints.push(where(documentId(), filters.listMode === 'exclude' ? 'not-in' : 'in', ids));
+        }
+    }
+    return constraints;
+}
+
+async function loadQuestionPage(page = 0) {
+    if (page < 0 || !appliedFilters) return;
+    const version = ++questionQueryVersion;
+    questionPageLoading = true;
+    questionPageError = '';
+    questions = [];
+    render();
+    try {
+        if (!appliedFilters.classFilter) {
+            questionPage = 0;
+            questionPageHasNext = false;
+            return;
+        }
+        const constraints = buildQuestionConstraints(appliedFilters);
+        const cursor = questionPageCursors[page];
+        const snapshot = constraints === null ? { docs: [] } : await getDocs(query(
+            collection(db, COLLECTIONS.questions), and(...constraints), orderBy(documentId()),
+            ...(cursor ? [startAfter(cursor)] : []), limit(appliedPageSize + 1)
+        ));
+        if (version !== questionQueryVersion) return;
+        const docs = snapshot.docs.slice(0, appliedPageSize);
+        questionPage = page;
+        questionPageLast = docs.at(-1) || null;
+        questionPageHasNext = snapshot.docs.length > appliedPageSize;
+        const loadedQuestions = docs.map(d => ({ id: d.id, ...d.data() }));
+        const passages = await loadPassages(db, loadedQuestions);
+        if (version !== questionQueryVersion) return;
+        comprehensionPassages = passages;
+        questions = loadedQuestions;
+        try { await loadReactions(); } catch { reactions = new Map(); }
+        els.syncStatus.textContent = 'Firestore page loaded';
+    } catch (error) {
+        if (version !== questionQueryVersion) return;
+        questionPageError = error.message || 'Unable to load questions.';
+        questionPage = page;
+        questions = [];
+        questionPageHasNext = false;
+        els.syncStatus.textContent = 'Firestore query failed';
+    } finally {
+        if (version === questionQueryVersion) {
+            questionPageLoading = false;
+            render();
+        }
+    }
+}
+
+function questionTable(rows) {
+    return `<div class="import-table-scroll"><table class="import-table"><thead><tr><th>Question</th><th>Taxonomy</th><th>Type / Difficulty</th><th>Answer</th><th>Actions</th></tr></thead><tbody>${rows.map(q => `<tr><td>${sanitizeRich(displayPrompt(q))}</td><td>${esc(['class', 'subject', 'chapter', 'topic'].map(type => taxonomyLabel(q, type)).join(' / '))}</td><td>${esc(TYPE_LABELS[q.type] || q.type)} / ${esc(q.difficulty || '')}</td><td>${answerHtml(q)}</td><td>${q.authorUid === currentUser?.uid ? `<button type="button" class="btn" data-edit="${esc(q.id)}">Edit</button>${q.status !== 'archived' && appliedFilters?.visibilityFilter === 'mine' ? `<label><input type="checkbox" data-archive-select="${esc(q.id)}" ${selectedArchiveIds.has(q.id) ? 'checked' : ''}> Select</label>` : ''}` : ''}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 function listenForLists() {
@@ -827,57 +942,25 @@ async function loadReactions() {
 
 function render() {
     const visible = getFilteredQuestions();
+    renderBulkArchiveSelection();
     els.questionCount.textContent = `${visible.length} question${visible.length === 1 ? '' : 's'}`;
-    els.questionGrid.innerHTML = visible.length ? visible.map(questionCard).join('') : `<div class="empty-card">${$('classFilter').value ? 'No matching questions.' : 'Select a class to view questions.'}</div>`;
+    const table = $('questionDisplayMode').value === 'table';
+    els.questionGrid.classList.toggle('table-view', table);
+    els.questionGrid.innerHTML = questionPageLoading ? '<div class="empty-card">Loading questions…</div>'
+        : questionPageError ? `<div class="empty-card">${esc(questionPageError)}</div>`
+        : visible.length ? (table ? questionTable(visible) : visible.map(questionCard).join(''))
+        : `<div class="empty-card">${appliedFilters?.classFilter ? 'No matching questions.' : 'Select a class and click Apply Filters.'}</div>`;
+    $('questionPageLabel').textContent = `Page ${questionPage + 1} · ${visible.length} questions`;
+    $('previousQuestionPage').disabled = questionPageLoading || questionPage === 0;
+    $('nextQuestionPage').disabled = questionPageLoading || !questionPageHasNext;
+    $('applyFiltersBtn').disabled = questionPageLoading;
     bindQuestionCardActions();
     renderMathAndDiagrams(els.questionGrid);
     renderLists();
 }
 
 function getFilteredQuestions() {
-    const filters = Object.fromEntries(filterIds.map(id => [id, $(id).value.trim()]));
-    if (!filters.classFilter) return [];
-    const queryText = filters.searchInput.toLowerCase();
-    const minLikes = parseOptionalNumber(filters.likesFilter);
-    const minDislikes = parseOptionalNumber(filters.dislikesFilter);
-    const selectedListIds = getSelectedListIds();
-    const selectedQuestionIds = selectedListIds.length ? new Set(
-        lists
-            .filter(list => selectedListIds.includes(list.id))
-            .flatMap(list => list.questionIds || [])
-    ) : null;
-    return questions.filter(q => {
-        const path = normalizeQuestionTaxonomy(q);
-        const reaction = reactions.get(q.id) || { likes: 0, dislikes: 0 };
-        const isMine = currentUser && q.authorUid === currentUser.uid;
-        const isArchived = q.status === 'archived';
-        const visibleByStatus = q.status === 'published' || (isMine && !isArchived && filters.visibilityFilter === 'all');
-        const visibilityOk = filters.visibilityFilter === 'mine'
-            ? isMine && !isArchived
-            : filters.visibilityFilter === 'archived'
-                ? isMine && isArchived
-                : visibleByStatus;
-        if (!visibilityOk) return false;
-        if (filters.classFilter && path?.classId !== filters.classFilter) return false;
-        if (filters.subjectFilter && path?.subjectId !== filters.subjectFilter) return false;
-        if (filters.chapterFilter && path?.chapterId !== filters.chapterFilter) return false;
-        if (filters.topicFilter && path?.topicId !== filters.topicFilter) return false;
-        if (filters.difficultyFilter && q.difficulty !== filters.difficultyFilter) return false;
-        if (filters.typeFilter && q.type !== filters.typeFilter) return false;
-        if (minLikes !== null && reaction.likes < minLikes) return false;
-        if (minDislikes !== null && reaction.dislikes < minDislikes) return false;
-        if (selectedQuestionIds && !selectedQuestionIds.has(q.id)) return false;
-        if (!queryText) return true;
-        return [
-            q.promptHtml,
-            answerText(q),
-            taxonomyLabel(q, 'class'),
-            taxonomyLabel(q, 'subject'),
-            taxonomyLabel(q, 'chapter'),
-            taxonomyLabel(q, 'topic'),
-            q.authorName
-        ].some(value => stripHtml(value).toLowerCase().includes(queryText));
-    });
+    return questions;
 }
 
 function parseOptionalNumber(value) {
@@ -1228,10 +1311,11 @@ function questionCard(q) {
     return `
         <article class="question-card">
             <div class="question-card-head">
+                ${mine && !isArchived && appliedFilters?.visibilityFilter === 'mine' ? `<label><input type="checkbox" data-archive-select="${esc(q.id)}" ${selectedArchiveIds.has(q.id) ? 'checked' : ''}> Select</label>` : ''}
                 <span class="type-chip">${TYPE_LABELS[q.type] || q.type}</span>
                 <span class="status-chip ${q.status || 'published'}">${esc(q.status || 'published')}</span>
             </div>
-            <div class="rich-content">${sanitizeRich(q.promptHtml || '')}</div>
+            <div class="rich-content">${sanitizeRich(displayPrompt(q))}</div>
             <div class="question-meta">
                 <span>${esc(taxonomyLabel(q, 'class') || 'Class')}</span>
                 <span>${esc(taxonomyLabel(q, 'subject') || 'Subject')}</span>
@@ -1291,12 +1375,70 @@ function bindQuestionCardActions() {
     }));
 }
 
+let comprehensionQuestions = [];
+let comprehensionIndex = 0;
+
+function collectQuestionContent() {
+    const type = $('qType').value;
+    const payload = {
+        type, difficulty: $('qDifficulty').value,
+        promptHtml: sanitizeRich($('qPrompt').innerHTML),
+        explanation: $('qExplanation').value.trim(),
+        translations: collectTranslations(),
+        options: [], trueAnswer: true, fibBanks: [], shortAnswerHtml: ''
+    };
+    collectQuestionAnswer(payload);
+    return payload;
+}
+
+function showComprehensionQuestion(index) {
+    comprehensionIndex = index;
+    const question = comprehensionQuestions[index];
+    $('qType').value = question.type || 'mcq';
+    $('qDifficulty').value = question.difficulty || 'Medium';
+    $('qPrompt').innerHTML = sanitizeRich(question.promptHtml || '');
+    $('qExplanation').value = question.explanation || '';
+    renderAnswerEditor(question);
+    renderTranslations(question.translations || {});
+    $('comprehensionQuestion').innerHTML = comprehensionQuestions.map((_, i) => `<option value="${i}">Question ${i + 1}</option>`).join('');
+    $('comprehensionQuestion').value = String(index);
+    $('removeComprehensionQuestion').disabled = comprehensionQuestions.length <= 2;
+    activeEditor = null;
+    savedSelectionRange = null;
+    activeTarget = null;
+}
+
+function setComprehensionMode() {
+    const enabled = $('qFormat').value === 'comprehension';
+    $('comprehensionEditor').hidden = !enabled;
+    if (enabled) {
+        if (!comprehensionQuestions.length) comprehensionQuestions = [collectQuestionContent(), {}];
+        else comprehensionQuestions[comprehensionIndex] = collectQuestionContent();
+        showComprehensionQuestion(comprehensionIndex);
+    }
+    $('saveQuestionBtn').textContent = enabled ? 'Save Comprehension' : 'Save Question';
+}
+
 function openQuestionDialog(question = null) {
     if (!currentUser) {
         toast('Sign in with Google to create questions');
         return;
     }
     activeQuestionId = question?.id || null;
+    comprehensionQuestions = [];
+    comprehensionIndex = 0;
+    $('qFormat').value = 'single';
+    $('comprehensionModeField').hidden = !!question;
+    $('comprehensionEditor').hidden = true;
+    const sharedPassage = question && referencesPassage(question)
+        ? comprehensionPassages.get(question.comprehensionId) : null;
+    $('qPassage').innerHTML = sanitizeRich(sharedPassage?.passageHtml || '');
+    $('comprehensionEditor').hidden = !sharedPassage;
+    $('comprehensionNavigation').hidden = !!question;
+    $('comprehensionHelp').textContent = sharedPassage
+        ? 'Editing this passage updates every question that references it. Save to apply your changes.'
+        : 'Class, subject, chapter, topic, and status apply to all questions.';
+    $('saveQuestionBtn').textContent = 'Save Question';
     $('questionSaveStatus').textContent = '';
     els.questionDialogTitle.textContent = activeQuestionId ? 'Edit Question' : 'New Question';
     $('archiveQuestionBtn').hidden = !activeQuestionId;
@@ -1474,22 +1616,22 @@ async function saveQuestion(event) {
         authorName: currentUser.displayName || currentUser.email || 'Teacher',
         updatedAt: serverTimestamp()
     };
-    if (type === 'mcq') {
-        payload.options = LABELS.map((_, i) => ({
-            html: sanitizeRich($(`option${i}`).innerHTML),
-            correct: document.querySelector(`.option-correct[data-option="${i}"]`)?.checked || false
-        }));
-        if (!payload.options.some(option => option.correct)) return toast('Select at least one correct option');
-    } else if (type === 'true_false') {
-        payload.trueAnswer = document.querySelector('input[name="tfAnswer"]:checked')?.value !== 'false';
-    } else if (type === 'fib') {
-        payload.fibBanks = Array.from(document.querySelectorAll('.blank-bank')).map(row => ({
-            label: row.querySelector('.fib-label').value.trim() || 'Blank',
-            answers: row.querySelector('.fib-answers').value.split('|').map(v => v.trim()).filter(Boolean)
-        })).filter(bank => bank.answers.length);
-        if (!payload.fibBanks.length) return toast('Add at least one answer bank');
-    } else {
-        payload.shortAnswerHtml = sanitizeRich($('shortAnswer').innerHTML);
+    const answerError = collectQuestionAnswer(payload);
+    const isComprehension = $('qFormat').value === 'comprehension';
+    if (!isComprehension && answerError) return toast(answerError);
+    let children = [];
+    if (isComprehension) {
+        comprehensionQuestions[comprehensionIndex] = collectQuestionContent();
+        const passage = sanitizeRich($('qPassage').innerHTML);
+        if (!stripHtml(passage)) return toast('Add a shared description or passage');
+        children = comprehensionQuestions;
+        for (let i = 0; i < children.length; i++) {
+            const error = validateComprehensionQuestion(children[i]);
+            if (error) {
+                showComprehensionQuestion(i);
+                return toast(`Question ${i + 1}: ${error}`);
+            }
+        }
     }
     if (!taxonomyLabels.className || !taxonomyLabels.subject || !taxonomyLabels.chapter || !taxonomyLabels.topic || !stripHtml(payload.promptHtml)) {
         return toast('Class, subject, chapter, topic, and question are required');
@@ -1500,19 +1642,52 @@ async function saveQuestion(event) {
         chapterId: $('qChapter').value,
         topicId: $('qTopic').value
     });
+    if (existing && referencesPassage(existing) && !stripHtml($('qPassage').innerHTML)) {
+        return toast('Add a shared description or passage');
+    }
     if (!existing) payload.verified = false;
     const saveButton = $('saveQuestionBtn');
     saveButton.disabled = true;
     saveButton.textContent = 'Saving…';
     try {
-        if (activeQuestionId) {
-            await updateDoc(doc(db, COLLECTIONS.questions, activeQuestionId), {
+        if (isComprehension) {
+            const batch = writeBatch(db);
+            const passageRef = doc(collection(db, PASSAGES_COLLECTION));
+            const groupId = passageRef.id;
+            const passageHtml = sanitizeRich($('qPassage').innerHTML);
+            batch.set(passageRef, {
+                passageHtml, authorUid: currentUser.uid,
+                published: payload.status === 'published',
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+            });
+            children.forEach((child, index) => {
+                batch.set(doc(collection(db, COLLECTIONS.questions)), {
+                    ...payload, ...child,
+                    comprehensionId: groupId,
+                    comprehensionIndex: index,
+                    promptHtml: child.promptHtml,
+                    createdAt: serverTimestamp()
+                });
+            });
+            await batch.commit();
+            toast(`Comprehension created with ${children.length} questions`);
+        } else if (activeQuestionId) {
+            const batch = writeBatch(db);
+            if (referencesPassage(existing)) {
+                batch.update(doc(db, PASSAGES_COLLECTION, existing.comprehensionId), {
+                    passageHtml: sanitizeRich($('qPassage').innerHTML),
+                    ...(payload.status === 'published' ? { published: true } : {}),
+                    updatedAt: serverTimestamp()
+                });
+            }
+            batch.update(doc(db, COLLECTIONS.questions, activeQuestionId), {
                 ...payload,
                 className: deleteField(),
                 subject: deleteField(),
                 chapter: deleteField(),
                 topic: deleteField()
             });
+            await batch.commit();
             toast('Question updated');
         } else {
             payload.createdAt = serverTimestamp();
@@ -1520,6 +1695,7 @@ async function saveQuestion(event) {
             toast('Question created');
         }
         closeQuestionDialog();
+        loadQuestionPage(questionPage);
     } catch (error) {
         console.error('Question save failed', error);
         saveStatus.textContent = error.code === 'permission-denied' || error.code === 'firestore/permission-denied'
@@ -1527,8 +1703,40 @@ async function saveQuestion(event) {
             : `Question was not saved (${error.code || 'unknown error'}): ${error.message || 'Please try again.'} Your entered content is still here.`;
     } finally {
         saveButton.disabled = false;
-        saveButton.textContent = 'Save Question';
+        saveButton.textContent = isComprehension ? 'Save Comprehension' : 'Save Question';
     }
+}
+
+function collectQuestionAnswer(payload) {
+    const type = payload.type;
+    if (type === 'mcq') {
+        payload.options = LABELS.map((_, i) => ({
+            html: sanitizeRich($(`option${i}`).innerHTML),
+            correct: document.querySelector(`.option-correct[data-option="${i}"]`)?.checked || false
+        }));
+        if (!payload.options.some(option => option.correct)) return 'Select at least one correct option';
+    } else if (type === 'true_false') {
+        payload.trueAnswer = document.querySelector('input[name="tfAnswer"]:checked')?.value !== 'false';
+    } else if (type === 'fib') {
+        payload.fibBanks = Array.from(document.querySelectorAll('.blank-bank')).map(row => ({
+            label: row.querySelector('.fib-label').value.trim() || 'Blank',
+            answers: row.querySelector('.fib-answers').value.split('|').map(v => v.trim()).filter(Boolean)
+        })).filter(bank => bank.answers.length);
+        if (!payload.fibBanks.length) return 'Add at least one answer bank';
+    } else {
+        payload.shortAnswerHtml = sanitizeRich($('shortAnswer').innerHTML);
+    }
+}
+
+function validateComprehensionQuestion(question) {
+    if (!stripHtml(question.promptHtml || '')) return 'Add question text';
+    if (question.type === 'mcq') {
+        if (!(question.options || []).some(option => option.correct)) return 'Select at least one correct option';
+        if (question.options.some(option => !stripHtml(option.html))) return 'Fill in all four options';
+    }
+    if (question.type === 'fib' && !question.fibBanks.length) return 'Add at least one answer bank';
+    if (question.type === 'short_answer' && !stripHtml(question.shortAnswerHtml)) return 'Add an answer';
+    return '';
 }
 
 function collectTranslations() {
@@ -1556,6 +1764,76 @@ async function archiveActiveQuestion() {
     if (changed) closeQuestionDialog();
 }
 
+function bulkArchiveCandidates() {
+    if (!currentUser || appliedFilters?.visibilityFilter !== 'mine') return [];
+    return getFilteredQuestions().filter(q => q.authorUid === currentUser.uid && q.status !== 'archived');
+}
+
+function renderBulkArchiveSelection() {
+    const candidates = bulkArchiveCandidates();
+    const eligible = new Set(candidates.map(q => q.id));
+    selectedArchiveIds = new Set([...selectedArchiveIds].filter(id => eligible.has(id)));
+    $('bulkArchiveToolbar').hidden = !currentUser || appliedFilters?.visibilityFilter !== 'mine';
+    const selectAll = $('selectAllFilteredQuestions');
+    selectAll.checked = candidates.length > 0 && selectedArchiveIds.size === candidates.length;
+    selectAll.indeterminate = selectedArchiveIds.size > 0 && !selectAll.checked;
+    selectAll.disabled = !candidates.length;
+    $('bulkArchiveCount').textContent = `${selectedArchiveIds.size} selected`;
+    $('previewBulkArchiveBtn').disabled = !selectedArchiveIds.size;
+}
+
+function previewBulkArchive() {
+    bulkArchivePreviewRows = bulkArchiveCandidates().filter(q => selectedArchiveIds.has(q.id))
+        .map(q => ({ ...q }));
+    if (!bulkArchivePreviewRows.length) return;
+    $('bulkArchiveStatus').textContent = '';
+    $('bulkArchivePreview').innerHTML = `<p>${bulkArchivePreviewRows.length} questions will be archived.</p>
+        <div class="import-table-scroll"><table class="import-table"><thead><tr><th>Question</th><th>Class / Subject / Chapter / Topic</th><th>Current status</th></tr></thead>
+        <tbody>${bulkArchivePreviewRows.map(q => `<tr><td>${esc(stripHtml(displayPrompt(q)))}</td><td>${esc(['class', 'subject', 'chapter', 'topic'].map(type => taxonomyLabel(q, type)).join(' / '))}</td><td>${esc(q.status || 'published')}</td></tr>`).join('')}</tbody></table></div>`;
+    $('bulkArchiveDialog').showModal();
+}
+
+async function confirmBulkArchive() {
+    if (bulkArchiveSaving || !bulkArchivePreviewRows.length) return;
+    const valid = currentUser && bulkArchivePreviewRows.every(preview => {
+        const live = questions.find(q => q.id === preview.id);
+        return live && live.authorUid === currentUser.uid && preview.authorUid === currentUser.uid
+            && live.status !== 'archived' && live.status === preview.status;
+    });
+    if (!valid) {
+        $('bulkArchiveStatus').textContent = 'Questions or account changed. Cancel and preview again. No changes were made.';
+        return;
+    }
+    bulkArchiveSaving = true;
+    $('confirmBulkArchiveBtn').disabled = true;
+    $('cancelBulkArchiveBtn').disabled = true;
+    let archived = 0;
+    try {
+        for (const group of chunk(bulkArchivePreviewRows, 400)) {
+            const batch = writeBatch(db);
+            group.forEach(q => batch.update(doc(db, COLLECTIONS.questions, q.id), {
+                status: 'archived', previousStatus: q.status || 'published',
+                updatedAt: serverTimestamp(), archivedAt: serverTimestamp()
+            }));
+            await batch.commit();
+            archived += group.length;
+            group.forEach(q => selectedArchiveIds.delete(q.id));
+            $('bulkArchiveStatus').textContent = `${archived} questions archived.`;
+        }
+        bulkArchivePreviewRows = [];
+        $('bulkArchiveDialog').close();
+        toast(`${archived} questions archived`);
+        loadQuestionPage(0);
+    } catch (error) {
+        bulkArchivePreviewRows = [];
+        $('bulkArchiveStatus').textContent = `${archived} questions archived. Remaining questions could not be archived (${error.code || 'unknown error'}). Cancel and preview again before retrying.`;
+    } finally {
+        bulkArchiveSaving = false;
+        $('confirmBulkArchiveBtn').disabled = false;
+        $('cancelBulkArchiveBtn').disabled = false;
+    }
+}
+
 async function archiveQuestion(id) {
     const question = questions.find(q => q.id === id);
     if (!currentUser || !question || question.authorUid !== currentUser.uid) {
@@ -1570,6 +1848,7 @@ async function archiveQuestion(id) {
         archivedAt: serverTimestamp()
     });
     toast('Question archived');
+    loadQuestionPage(questionPage);
     return true;
 }
 
@@ -1587,6 +1866,7 @@ async function unarchiveQuestion(id) {
         updatedAt: serverTimestamp()
     });
     toast('Question unarchived');
+    loadQuestionPage(questionPage);
     return true;
 }
 
@@ -1673,6 +1953,7 @@ function renderLists() {
         const isArchived = list.status === 'archived';
         return `
             <article class="list-card">
+                <p>${(list.questionIds || []).length} questions in this list. Preview below includes questions on the current bank page; use View for the complete list.</p>
                 <div class="list-head">
                     <h3>${esc(list.name)}${isArchived ? ' <span class="status-chip archived">archived</span>' : ''}</h3>
                     <div class="list-card-actions">
@@ -1683,10 +1964,10 @@ function renderLists() {
                 <div class="list-items">
                     ${items.length ? items.map(q => `
                         <div class="mini-question">
-                            <span>${esc(stripHtml(q.promptHtml).slice(0, 120))}</span>
+                            <span>${esc(stripHtml(displayPrompt(q)).slice(0, 120))}</span>
                             ${isArchived ? '' : `<button class="pill-btn danger" data-remove-from-list="${list.id}" data-question="${q.id}">Remove</button>`}
                         </div>
-                    `).join('') : '<div class="empty-card">No questions in this list.</div>'}
+                    `).join('') : ((list.questionIds || []).length ? '<div class="empty-card">No list questions on the current bank page. Open View to see this list.</div>' : '<div class="empty-card">No questions in this list.</div>')}
                 </div>
             </article>
         `;
@@ -2289,6 +2570,7 @@ async function confirmImport() {
     importRows = [];
     importPreviewCsv = null;
     toast(selectedListId ? 'Questions imported and added to list' : 'Questions imported');
+    loadQuestionPage(0);
 }
 
 function renderImportListOptions() {
@@ -2306,12 +2588,13 @@ function renderImportListOptions() {
 function renderListFilterOptions() {
     const selected = new Set(getSelectedListIds());
     els.listFilter.innerHTML = lists.length
-        ? lists.map(list => `<option value="${list.id}">${esc(list.name)}</option>`).join('')
+        ? lists.map(list => `<option value="${list.id}">${esc(list.name)}${list.status === 'archived' ? ' (Archived)' : ''}</option>`).join('')
         : '<option value="" disabled>No lists available</option>';
     Array.from(els.listFilter.options).forEach(option => {
         option.selected = selected.has(option.value);
     });
     els.listFilter.disabled = !currentUser || !lists.length;
+    $('listFilterMode').disabled = els.listFilter.disabled;
 }
 
 function parseCsvQuestions(text) {
@@ -2506,7 +2789,7 @@ function exportFilteredCsv() {
             taxonomyLabel(q, 'chapter'),
             taxonomyLabel(q, 'topic'),
             q.difficulty,
-            stripHtml(q.promptHtml),
+            stripHtml(displayPrompt(q)),
             stripHtml(q.options?.[0]?.html),
             stripHtml(q.options?.[1]?.html),
             stripHtml(q.options?.[2]?.html),
@@ -2740,6 +3023,7 @@ async function copyTextToClipboard(text, status, selectionTarget, label = 'Inval
 }
 
 function clearFilters() {
+    $('listFilterMode').value = 'include';
     filterIds.forEach(id => {
         if (id === 'visibilityFilter') $(id).value = currentUser ? 'all' : 'published';
         else $(id).value = '';
@@ -2748,7 +3032,6 @@ function clearFilters() {
         option.selected = false;
     });
     renderMetadataFilterOptions();
-    render();
 }
 
 function normalizeType(value) {

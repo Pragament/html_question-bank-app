@@ -1,3 +1,5 @@
+import { PASSAGES_COLLECTION, referencesPassage, loadPassages, questionPromptHtml } from './comprehension.js';
+
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
     getAuth,
@@ -26,6 +28,9 @@ const firebaseConfig = {
     appId: '1:875648503944:web:ea0d256e7aa977496f0f3d',
     measurementId: 'G-CF82P2M36M'
 };
+
+let comprehensionPassages = new Map();
+const displayPrompt = question => questionPromptHtml(question, comprehensionPassages);
 
 const COLLECTIONS = {
     questions: 'qb_questions_v1',
@@ -100,7 +105,9 @@ async function loadQuestions(questionIds) {
         const snap = await withTimeout(getDocs(query(collection(db, COLLECTIONS.questions), where(documentId(), 'in', ids))), 12000);
         snap.forEach(docSnap => byId.set(docSnap.id, { id: docSnap.id, ...docSnap.data() }));
     }
-    return questionIds.map(id => byId.get(id)).filter(Boolean);
+    const questions = questionIds.map(id => byId.get(id)).filter(Boolean);
+    comprehensionPassages = await loadPassages(db, questions);
+    return questions;
 }
 
 async function loadTaxonomy() {
@@ -140,7 +147,7 @@ function questionCard(q) {
                 <span class="type-chip">${TYPE_LABELS[q.type] || esc(q.type || 'Question')}</span>
                 <span class="status-chip ${esc(q.status || 'published')}">${esc(q.status || 'published')}</span>
             </div>
-            <div class="rich-content">${sanitizeRich(q.promptHtml || '')}</div>
+            <div class="rich-content">${sanitizeRich(displayPrompt(q))}</div>
             <div class="question-meta">
                 <span>${esc(taxonomyLabel(q, 'class') || 'Class')}</span>
                 <span>${esc(taxonomyLabel(q, 'subject') || 'Subject')}</span>
