@@ -22,6 +22,7 @@
             <button class="btn" id="templatesBtn" hidden>Templates</button>
             <button class="btn" id="importBtn" hidden>Import</button>
             <button class="btn" id="exportBtn" hidden>Export Page CSV</button>
+            <a class="btn" href="question-paper.html">MCQ Paper Editor</a>
             <button class="btn primary" id="newQuestionBtn" hidden>New Question</button>
             <button class="btn" id="loginBtn">Google Login</button>
             <button class="btn" id="logoutBtn" hidden>Logout</button>
@@ -343,7 +344,8 @@
                 </label>
                 <label class="field">
                     <span>Paste CSV</span>
-                    <textarea id="csvPasteInput" rows="8" placeholder="Paste CSV here"></textarea>
+                    <textarea id="csvPasteInput" rows="8" wrap="off" placeholder="Paste CSV here" aria-describedby="csvLineCount"></textarea>
+                    <small id="csvLineCount" role="status" aria-live="polite">Total lines: 0 · Excluding header: 0</small>
                 </label>
                 <label class="field">
                     <span>Add Imported Questions To</span>
@@ -353,7 +355,8 @@
                 </label>
                 <div class="modal-actions import-actions">
                     <button class="btn" type="button" id="previewImportBtn">Preview</button>
-                    <button class="btn primary" type="button" id="confirmImportBtn" disabled>Import Valid Rows</button>
+                    <button class="btn primary" type="button" id="confirmImportBtn" aria-describedby="importActionStatus" disabled>Import Valid Rows</button>
+                    <span id="importActionStatus" role="status" aria-live="polite">Click Preview before importing.</span>
                 </div>
             </div>
             <details id="aiPromptBuilder" class="prompt-panel" open>

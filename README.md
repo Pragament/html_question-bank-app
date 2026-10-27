@@ -90,3 +90,15 @@ For MCQ questions, multiple correct answers use this format:
 ```text
 A|C
 ```
+
+## Manual MCQ paper editor
+
+Open `question-paper.html` (or **MCQ Paper Editor** in the bank header). Select class and subject, optionally date and identifier, then write MCQs or reuse published questions. A list name is generated automatically. Use the bank list's **Edit MCQ paper** link to reopen an existing MCQ-only list.
+
+The editor supports shared comprehension passages, checkbox answer keys, all-correct/any-correct scoring, optional collapsed metadata and translations, a single rich-text toolbar, per-paper and per-question option layouts, question/option reordering, randomization, and saving another paper set. Question and passage authors retain content edit rights. Lists store question IDs and presentation settings.
+
+Download CSV, an answer-key CSV, or a DOCX question paper with adjustable 8–20 pt text and 1–4 page columns. Downloads use current form content; saving to Firebase is separate. Use **Keyboard shortcuts** in the editor to see mouse-free controls. New questions default to draft.
+
+Core regression tests: `node --test tests/*.test.cjs`. See `FIRESTORE_SCHEMA.md` for paper fields, bank picker indexes, and integration details for external quiz consumers.
+
+Browser regression (with Playwright installed and the server running at port 8000): `node tests/paper-browser.cjs`. Firebase calls are mocked so it never writes live data. Optional environment variables: `PAPER_TEST_URL`, `PAPER_TEST_OUTPUT`, `PLAYWRIGHT_MODULE`, and `PLAYWRIGHT_EXECUTABLE`.

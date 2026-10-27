@@ -145,6 +145,8 @@ let bulkArchivePreviewRows = [];
 let bulkArchiveSaving = false;
 let importRows = [];
 let importPreviewCsv = null;
+let importPreviewUserUid = null;
+let importPreviewVersion = 0;
 let unsubscribeLists = null;
 let unsubscribeTaxonomy = null;
 let toastTimer = null;
@@ -351,6 +353,7 @@ promptOnboardingOnRefresh();
 listenForTaxonomy();
 
 onAuthStateChanged(auth, (user) => {
+    if (currentUser?.uid !== user?.uid) invalidateImportPreview();
     currentUser = user;
     updateHeaderAuthActions();
     els.activeUserLabel.textContent = user ? user.displayName || user.email || 'Signed in' : 'Viewing published questions';
@@ -458,11 +461,10 @@ function bindEvents() {
     $('closeImportDialog').addEventListener('click', () => els.importDialog.close());
     $('previewImportBtn').addEventListener('click', previewImport);
     $('csvPasteInput').addEventListener('input', () => {
-        importPreviewCsv = null;
-        importRows = [];
-        $('confirmImportBtn').disabled = true;
-        els.importPreview.textContent = 'CSV changed. Click Preview before importing.';
+        updateCsvLineCount();
+        invalidateImportPreview();
     });
+    updateCsvLineCount();
     $('confirmImportBtn').addEventListener('click', confirmImport);
     $('copyPromptBtn').addEventListener('click', copyPrompt);
     $('downloadTemplateBtn').addEventListener('click', downloadTemplateCsv);
@@ -1958,6 +1960,7 @@ function renderLists() {
                     <h3>${esc(list.name)}${isArchived ? ' <span class="status-chip archived">archived</span>' : ''}</h3>
                     <div class="list-card-actions">
                         <a class="pill-btn" href="list-detail.html?id=${encodeURIComponent(list.id)}">View</a>
+                        <a class="pill-btn" href="question-paper.html?id=${encodeURIComponent(list.id)}">Edit MCQ paper</a>
                         <button class="pill-btn ${isArchived ? '' : 'danger'}" data-${isArchived ? 'unarchive-list' : 'archive-list'}="${list.id}">${isArchived ? 'Unarchive' : 'Archive'}</button>
                     </div>
                 </div>
@@ -2436,26 +2439,39 @@ async function renderMathAndDiagrams(root) {
     }
 }
 
-async function previewImport() {
-    $('aiPromptBuilder').open = false;
-    const csv = $('csvPasteInput').value.trim();
+function invalidateImportPreview(message = 'CSV changed. Click Preview before importing.') {
+    importPreviewVersion++;
     importPreviewCsv = null;
+    importPreviewUserUid = null;
     importRows = [];
     $('confirmImportBtn').disabled = true;
-    els.importPreview.textContent = 'Loading taxonomy for preview…';
+    $('importActionStatus').textContent = message;
+    els.importPreview.textContent = message;
+}
+
+async function previewImport() {
+    $('aiPromptBuilder').open = false;
+    const csv = $('csvPasteInput').value;
+    const previewUserUid = currentUser?.uid || null;
+    invalidateImportPreview('Loading taxonomy for preview…');
+    const version = importPreviewVersion;
     try {
         const snapshot = await getDocs(collection(db, COLLECTIONS.taxonomy));
         taxonomy = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort(sortTaxonomyNodes);
         taxonomyById = new Map(taxonomy.map(node => [node.id, node]));
     } catch {
+        if (version !== importPreviewVersion) return;
+        $('importActionStatus').textContent = 'Could not load taxonomy. Retry Preview before importing.';
         els.importPreview.textContent = 'Could not load taxonomy. Retry Preview before importing.';
         return;
     }
-    if ($('csvPasteInput').value.trim() !== csv) return;
+    if (version !== importPreviewVersion || $('csvPasteInput').value !== csv || (currentUser?.uid || null) !== previewUserUid) return;
     const result = parseCsvQuestions(csv);
     importRows = result.rows;
     importPreviewCsv = csv;
+    importPreviewUserUid = previewUserUid;
     $('confirmImportBtn').disabled = !importRows.length || !currentUser;
+    $('importActionStatus').textContent = !currentUser ? 'Sign in to import the previewed rows.' : !importRows.length ? 'No valid rows to import. Fix the CSV and click Preview again.' : `${importRows.length} valid rows previewed. Ready to import.`;
     const invalidSection = result.errors.length ? buildInvalidCsvSection(csv, result.errors) : '';
     els.importPreview.innerHTML = `
         <strong>${importRows.length} valid row${importRows.length === 1 ? '' : 's'}</strong>
@@ -2468,7 +2484,7 @@ async function previewImport() {
                 <button class="btn" type="button" id="copyInvalidCsvBtn">Copy Invalid CSV Rows</button>
                 <p id="copyInvalidCsvStatus" role="status" aria-live="polite"></p>
                 ${formatImportErrors(result.errors)}
-                <pre id="invalidCsvText">${esc(invalidSection)}</pre>
+                <pre id="invalidCsvText" tabindex="0" role="region" aria-label="Invalid CSV rows, scroll horizontally to read all columns">${esc(invalidSection)}</pre>
             </section>` : ''}
     `;
     if (result.errors.length) {
@@ -2497,7 +2513,7 @@ function renderValidImportTable(rows) {
         ['ACTFL Mode', row => row.actfl_mode],
         ['Translations', row => JSON.stringify(row.translations)]
     ];
-    return `<div class="import-table-scroll"><table class="import-table"><caption>Valid questions to import</caption>
+    return `<div class="import-table-scroll" tabindex="0" role="region" aria-label="Valid questions preview, scroll horizontally to see all columns"><table class="import-table"><caption>Valid questions to import</caption>
         <thead><tr><th scope="col">#</th>${columns.map(([label]) => `<th scope="col">${esc(label)}</th>`).join('')}</tr></thead>
         <tbody>${rows.map((row, index) => `<tr><th scope="row">${index + 1}</th>${columns.map(([, value]) => `<td>${esc(value(row) || '')}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>`;
@@ -2510,7 +2526,7 @@ function renderImportTaxonomyPlan(rows) {
     }));
     if (!missing.size) return '<h3>Taxonomy to create (0)</h3><p>No new taxonomy entries are needed.</p>';
     return `<h3>Taxonomy to create (${missing.size})</h3>
-        <div class="import-table-scroll"><table class="import-table"><thead><tr><th scope="col">Type</th><th scope="col">Label</th><th scope="col">Document ID</th><th scope="col">Parent ID</th></tr></thead>
+        <div class="import-table-scroll" tabindex="0" role="region" aria-label="Taxonomy preview, scroll horizontally to see all columns"><table class="import-table"><thead><tr><th scope="col">Type</th><th scope="col">Label</th><th scope="col">Document ID</th><th scope="col">Parent ID</th></tr></thead>
         <tbody>${Array.from(missing.values()).map(node => `<tr><td>${esc(node.type)}</td><td>${esc(node.label)}</td><td>${esc(node.id)}</td><td>${esc(node.parentId || '—')}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -2520,26 +2536,25 @@ function buildInvalidCsvSection(csv, errors) {
         ? Number(error.match(/^Row (\d+):/)?.[1])
         : error.row).filter(Number.isInteger));
     const invalidRows = csvRows.filter((_, index) => rowNumbers.has(index + 1));
-    const errorText = errors.map(error => typeof error === 'string' ? error : [
-        `Row ${error.row}: ${error.message}`,
-        `Column: ${error.field}`,
-        ...(error.details || [])
-    ].join('\n')).join('\n\n');
-    const invalidCsv = invalidRows.length ? toCsv([csvRows[0], ...invalidRows]) : csv;
-    return `Validation errors:\n${errorText}\n\nInvalid CSV rows:\n${invalidCsv}`;
+    // Errors are already shown above the CSV. Keep the displayed/copied CSV importable.
+    return invalidRows.length ? toCsv([csvRows[0], ...invalidRows]) : csv;
 }
 
 async function confirmImport() {
     if (!currentUser) return toast('Sign in to import');
-    if (importPreviewCsv === null || importPreviewCsv !== $('csvPasteInput').value.trim() || !importRows.length) {
+    if (importPreviewCsv === null || importPreviewCsv !== $('csvPasteInput').value || importPreviewUserUid !== currentUser.uid || !importRows.length) {
         $('confirmImportBtn').disabled = true;
+        $('importActionStatus').textContent = 'Click Preview to review the current CSV before importing.';
         els.importPreview.textContent = 'Click Preview to review the current CSV before importing.';
         return;
     }
     const selectedListId = els.importListSelect.value;
+    if (!selectedListId && !window.confirm(`Import ${importRows.length} valid row${importRows.length === 1 ? '' : 's'} without adding to a list? The questions will be saved in the question bank only.`)) return;
+    const rowsToImport = importRows.slice();
+    invalidateImportPreview('Importing the previewed rows…');
     const importedQuestionIds = [];
     const taxonomyPathCache = new Map();
-    for (const row of importRows) {
+    for (const row of rowsToImport) {
         const { taxonomyLabels, ...question } = row;
         const cacheKey = taxonomyPathCacheKey(taxonomyLabels);
         if (!taxonomyPathCache.has(cacheKey)) {
@@ -2565,10 +2580,10 @@ async function confirmImport() {
     }
     els.importDialog.close();
     $('csvPasteInput').value = '';
+    updateCsvLineCount();
     $('csvFileInput').value = '';
     els.importListSelect.value = '';
-    importRows = [];
-    importPreviewCsv = null;
+    invalidateImportPreview('Import complete. Paste or upload CSV, then click Preview before importing again.');
     toast(selectedListId ? 'Questions imported and added to list' : 'Questions imported');
     loadQuestionPage(0);
 }
@@ -2602,9 +2617,26 @@ function parseCsvQuestions(text) {
     const errors = [];
     if (rows.length < 2) return { rows: [], errors: ['No CSV rows found'] };
     const headers = rows[0].map(h => h.trim().toLowerCase());
+    const duplicateHeaders = [...new Set(headers.filter((header, index) => headers.indexOf(header) !== index))];
+    if (headers.some(header => !header) || duplicateHeaders.length) {
+        return { rows: [], errors: [`CSV header names must be non-empty and unique.${duplicateHeaders.length ? ` Duplicate headers: ${duplicateHeaders.join(', ')}.` : ''}`] };
+    }
     const parsed = [];
     rows.slice(1).forEach((cells, index) => {
-        if (!cells.some(Boolean)) return;
+        if (!cells.some(cell => cell.trim())) return;
+        if (cells.length !== headers.length) {
+            errors.push({
+                row: index + 2,
+                field: 'CSV columns',
+                message: `Expected ${headers.length} columns, received ${cells.length}. Values may be shifted into the wrong fields.`,
+                details: [
+                    'Keep one cell for every header, including empty optional and non-applicable fields.',
+                    'Quote cells containing commas or line breaks; escape a double quote as two double quotes.',
+                    'Do not add or remove cells within a row. Optional columns can only be omitted from the header and every row together.'
+                ]
+            });
+            return;
+        }
         const row = Object.fromEntries(headers.map((h, i) => [h, cells[i] || '']));
         const type = normalizeType(row.type || 'mcq');
         const taxonomyLabels = {
@@ -2718,7 +2750,8 @@ function fibBankImportError(rowNumber, row) {
 }
 
 function formatImportErrors(errors) {
-    return errors.map(error => {
+    const uniqueErrors = [...new Map(errors.map(error => [typeof error === 'string' ? error : JSON.stringify(error), error])).values()];
+    return uniqueErrors.map(error => {
         if (typeof error === 'string') return `<div>${esc(error)}</div>`;
         return `
             <div class="import-error">
@@ -2735,6 +2768,17 @@ function parseFibBanks(value) {
         const [label, answers] = bank.includes(':') ? bank.split(/:(.*)/).filter(Boolean) : [`Blank ${index + 1}`, bank];
         return { label: label.trim(), answers: splitMulti(answers) };
     }).filter(bank => bank.answers.length);
+}
+
+function countCsvInputLines(value) {
+    const text = String(value || '').replace(/\r\n?/g, '\n').replace(/\n+$/, '');
+    const total = text.trim() ? text.split('\n').length : 0;
+    return { total, excludingHeader: Math.max(0, total - 1) };
+}
+
+function updateCsvLineCount() {
+    const counts = countCsvInputLines($('csvPasteInput').value);
+    $('csvLineCount').textContent = `Total lines: ${counts.total} · Excluding header: ${counts.excludingHeader}`;
 }
 
 function parseCsv(text) {
@@ -2771,10 +2815,14 @@ function parseCsv(text) {
 function loadCsvFile(event) {
     const file = event.target.files?.[0];
     if (!file) return;
+    invalidateImportPreview('Loading CSV file. Click Preview after it loads.');
+    const fileVersion = importPreviewVersion;
     const reader = new FileReader();
     reader.onload = () => {
+        if (fileVersion !== importPreviewVersion) return;
         $('csvPasteInput').value = reader.result;
-        previewImport();
+        updateCsvLineCount();
+        invalidateImportPreview('CSV file loaded. Click Preview before importing.');
     };
     reader.readAsText(file);
 }
@@ -2907,6 +2955,9 @@ ${typeRequirement}
 - Keep the original question, options, and model answer in clear English and provide accurate Hindi translations in Devanagari for every row.
 - prefer more FIB and short_answer rows and fewer mcq and true_false rows to reduce student guesswork.
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
+- Randomize the option order independently for each MCQ so the correct answer is not consistently in the same position. Across the set, spread single-correct answers approximately evenly over A, B, C, and D in an unpredictable order; do not use a repeating cycle such as A, B, C, D or a fixed correct-letter pattern. Do not force equal counts for very small sets.
+- For multiple-correct MCQs, vary the correct-letter combinations without a recurring pattern. After ordering the options, recompute correct_options from the final A-D positions and keep each Hindi translated option paired with its English option. Verify that the answer key and explanation still match the final option order.
+- Make distractors plausible and similar in length, grammar, and detail to the correct answer so wording does not reveal it. Avoid order-dependent choices such as "all of the above", "both A and B", or references to another option's letter, which become invalid when shuffled.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
 - Set language to Hindi for every row. Fill translated_question, translated_answer, and translated_explanation with Hindi translations of the question, answer, and teacher-facing explanation; for MCQs, also fill translated_option_a through translated_option_d in the same order as the English options. Preserve mathematical notation, numbers, blank positions, and the correct answers. Leave translated option columns blank for non-MCQ rows.
 - sectionId must be a supplied existing classSections document ID; leave blank if none is supplied. Never invent IDs.
@@ -2918,7 +2969,11 @@ ${typeRequirement}
 - actfl_sublevel is optional and can be omitted or left blank. When provided for Novice, Intermediate, or Advanced, use Low, Mid, or High. Leave blank for Superior, Distinguished, or an empty actfl_level. Store the level and sublevel separately, for example actfl_level=Novice and actfl_sublevel=Low; never put "Novice Low" in actfl_level.
 - actfl_mode must be one of ${QUESTION_METADATA_VALUES.actfl_mode.join(', ')}; leave blank when not applicable.
 - Do not invent authorUid, authorName, createdAt, updatedAt, or status columns; the importer assigns these. Taxonomy IDs are resolved from the selected class, subject, chapter, and topic labels.
-- Escape commas and quotation marks correctly according to CSV rules.
+- Produce exactly ${TEMPLATE_HEADERS.length} cells in every data row, in the exact header order above. Include the header exactly once. Optional fields may have empty values, but their cells must not be omitted. Do not add extra separators or append values after the last column.
+- Construct each row by mapping named fields to the headers, then serialize it as CSV. Quote every cell, including empty cells as ""; escape a double quote inside a value as two double quotes. Commas inside quoted sentences are content, not column separators.
+- Keep type-specific values only in their designated columns: MCQ uses option_a through option_d and correct_options; true_false uses true_false_answer (true or false); fib uses fib_banks; short_answer uses short_answer. Leave other types' answer columns empty. translated_answer belongs only in its translation column.
+- Keep sectionId, verified, explanation, explanationUrl, skill, actfl_level, actfl_sublevel, actfl_mode, and translated_explanation in their exact positions. Never put an explanation or true/false value in skill, or a skill such as Writing in actfl_level. Use English enum values even when the explanation or translations are in Hindi.
+- Before returning the CSV, parse it back and verify that each row has exactly ${TEMPLATE_HEADERS.length} cells, each value matches its named header, metadata enums are valid, answer keys agree with the question, and there are no duplicate question rows. Repair any shifted columns before output. Do not include validation messages, repeated error summaries, or duplicate headers in the CSV.
 - Return only valid CSV inside one csv code block.${customRequirements ? `
 
 Custom requirements:

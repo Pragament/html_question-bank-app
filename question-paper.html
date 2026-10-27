@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MCQ Paper Editor</title>
+    <link rel="stylesheet" href="question-paper.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+    <script type="module" src="question-paper.js"></script>
+</head>
+<body>
+<a href="#paperSettings" class="skip-link">Skip to paper settings</a>
+<header class="floating-bar" aria-label="Paper controls">
+    <a href="index.html" aria-label="Back to question bank">← Bank</a>
+    <strong id="stats" aria-live="polite">0 questions</strong>
+    <label>Add <input id="bulkCount" type="number" min="1" max="100" value="1" aria-label="Number of empty questions to add"></label>
+    <button id="bulkAdd" type="button" title="Alt+N">+ Questions</button>
+    <button id="save" type="button" class="primary" title="Ctrl or Command+S">Save</button>
+    <button id="login" type="button">Google login</button><button id="logout" type="button" hidden>Logout</button>
+</header>
+<main>
+    <div class="page-heading"><p class="eyebrow">QUESTION BANK STUDIO</p><h1>Build a question paper</h1><p>Write MCQs, reuse questions, and make paper sets.</p></div>
+    <p id="status" class="status" role="status" aria-live="polite">Connecting…</p>
+    <section id="paperSettings" class="panel" aria-labelledby="settingsTitle">
+        <h2 id="settingsTitle">Paper details</h2>
+        <div class="settings-grid">
+            <label>Class <select id="paperClass" required><option value="">Choose class</option></select></label>
+            <label>Subject <select id="paperSubject" required><option value="">Choose subject</option></select></label>
+            <label>Date <span class="muted">optional</span><input id="paperDate" type="date"></label>
+            <label>Custom identifier <span class="muted">optional</span><input id="paperIdentifier" placeholder="e.g. Set A" maxlength="100"></label>
+            <label class="wide">List name <input id="paperName" disabled placeholder="Choose class and subject"></label>
+        </div>
+        <div class="actions"><label>Open my list <select id="savedLists"><option value="">Choose a saved list</option></select></label><button id="openList" type="button">Open</button><button id="newPaper" type="button">New paper</button><button id="saveCopy" type="button">Save as another list</button><button id="randomize" type="button">Randomize questions</button></div>
+        <details><summary>Keyboard shortcuts</summary><ul class="shortcuts"><li><kbd>Ctrl / ⌘ S</kbd> Save list and authored questions</li><li><kbd>Alt N</kbd> Add empty questions</li><li><kbd>Alt P</kbd> Add comprehension passage</li><li><kbd>Alt ↑ / ↓</kbd> Move the focused question</li><li><kbd>Alt Shift ↑ / ↓</kbd> Move the focused option</li><li><kbd>Ctrl / ⌘ B</kbd> Bold · <kbd>Ctrl / ⌘ I</kbd> Italic</li><li><kbd>Tab</kbd> Move between controls · <kbd>Space</kbd> Select correct option or expand details</li></ul><p>Shortcuts may depend on your browser and operating system. Every action also has a keyboard-focusable button.</p></details>
+    </section>
+    <section class="panel compact" aria-label="Reuse questions and create comprehension">
+        <div class="actions"><button id="addPassage" type="button" title="Alt+P">+ Comprehension passage</button><button id="browseBank" type="button">Choose from question bank</button><label>Question ID <input id="reuseId" placeholder="Existing question ID"></label><button id="reuseQuestion" type="button">Add by ID</button></div>
+    </section>
+    <div class="editor-dock" role="region" aria-label="Shared text formatting and default layout">
+        <div id="formatToolbar" role="toolbar" aria-label="Format the active editor">
+            <button type="button" data-format="bold" aria-label="Bold"><b>B</b></button><button type="button" data-format="italic" aria-label="Italic"><i>I</i></button><button type="button" data-format="code">Code</button><button type="button" data-format="equation">Equation</button><button type="button" data-format="image">Image</button><button type="button" data-format="table">Table</button><button type="button" data-format="diagram">Diagram</button>
+        </div>
+        <label>Default options <select id="defaultLayout"><option value="1x4">1 × 4 — one row</option><option value="2x2" selected>2 × 2</option><option value="4x1">4 × 1 — one column</option></select></label>
+        <span id="editorTarget" class="muted">Focus a text area to format it</span>
+    </div>
+    <section id="passages" aria-label="Shared comprehension passages"></section>
+    <section id="questions" aria-label="Questions"></section>
+    <div id="empty" class="empty panel">Start with an empty question or choose questions from the bank.</div>
+    <section class="panel" aria-labelledby="exportTitle"><h2 id="exportTitle">Download question paper</h2><div class="actions"><label>Text size <input id="textSize" type="range" min="8" max="20" value="11"><output id="textSizeValue" for="textSize">11 pt</output></label><label>DOCX columns <select id="paperColumns"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><button id="downloadDocx" type="button" class="primary">Download DOCX</button><button id="downloadCsv" type="button">Export CSV</button></div><p class="muted">The question paper excludes answers. The answer key below can be downloaded separately. Equations export as their formula text; diagrams and images export as images.</p><div id="paperPreview" aria-label="Question paper preview"></div></section>
+    <section class="panel" aria-labelledby="keyTitle"><div class="actions"><h2 id="keyTitle">Answer key</h2><button id="downloadKey" type="button">Download key CSV</button></div><div class="table-scroll"><table><thead><tr><th scope="col">Question</th><th scope="col">Correct options</th><th scope="col">Full marks rule</th></tr></thead><tbody id="answerKey"></tbody></table></div><p>A wrong option selected along with a correct option is always marked wrong.</p></section>
+</main>
+<dialog id="bankDialog"><div class="actions"><h2>Choose MCQ questions</h2><button id="closeBank" type="button">Close</button></div><label>Filter loaded questions <input id="bankSearch" type="search" placeholder="Question text or author"></label><p id="bankStatus" role="status"></p><div id="bankResults"></div><button id="moreBank" type="button">Load more</button></dialog>
+<dialog id="insertDialog"><form id="insertForm"><h2 id="insertTitle">Insert</h2><label id="insertLabel">Content<textarea id="insertValue" rows="5"></textarea></label><p id="insertHint"></p><div class="actions"><button type="button" id="cancelInsert">Cancel</button><button type="submit" class="primary">Insert</button></div></form></dialog>
+</body>
+</html>

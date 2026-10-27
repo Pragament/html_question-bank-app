@@ -248,3 +248,32 @@ Editing any linked question exposes the shared passage. Saving atomically update
 Passages are private to their author until a question is published. `published` is sticky after first publication so archiving or drafting one question does not break other published references. The passage author alone can edit it. Deploy the accompanying Firestore rules before using reference-based comprehensions.
 
 Legacy questions containing `comprehensionPassageHtml` retain their embedded passage and render as before. Existing data is not migrated automatically.
+
+### Manual MCQ paper editor
+
+`question-paper.html` edits private lists with up to 100 MCQs. `question-paper.js` and `question-paper.css` provide the standalone editor. Questions and passages remain references; saving uses one atomic batch for the list plus new or changed authored question/passage documents.
+
+Additional `qb_lists_v1` fields:
+
+```js
+{
+  classId: 'taxonomy class ID', subjectId: 'taxonomy subject ID',
+  date: '2026-10-24', identifier: 'Set A',
+  defaultOptionsLayout: '2x2', // 1x4 = one row; 4x1 = one column
+  textSize: 11, columns: 2, // DOCX font points and 1–4 paper columns
+  questionSettings: {
+    questionId: { optionOrder: [1, 0, 2, 3], optionsLayout: '' }
+  },
+  sourceListId: 'optional original list ID when saved as another list'
+}
+```
+
+`questionIds` is the paper order. `optionOrder` maps displayed A–D to the original question option indexes; answers travel with their canonical options. An empty `optionsLayout` inherits the list default. Reordering and layout changes never write another author's question. Copies reuse question and passage IDs with their own ordering/settings.
+
+MCQs add `multipleCorrectMode: 'all' | 'any'` (missing means `all`) and optional `explanationHtml`. Correctness remains in `options[].correct`. Full marks require all correct options in `all` mode, or one or more correct options in `any` mode. Selecting any wrong option always earns zero. External quiz/grading consumers must implement this rule and apply list `questionSettings` when presenting paper sets.
+
+Chapter/topic are optional for manually created paper questions and are stored as empty IDs when omitted. Newly created questions default to draft. Only the list owner can save the list; only the question/passage author can edit its content. Existing Firestore owner/author rules enforce these permissions. Shared passages use the previously documented `qb_comprehensions_v1` rules.
+
+The bank picker queries MCQs for class and subject with an OR between published status and current author UID, ordered by document ID, 30 at a time. Firestore may request composite indexes for `(classId, subjectId, type, status, __name__)` and `(classId, subjectId, type, authorUid, __name__)`; follow its index links if needed. Direct question ID selection is also available.
+
+CSV exports include displayed option order, mapped correct letters, scoring mode, passage reference plus portable passage text, layout, explanation, and translations JSON. DOCX is generated locally as an OOXML ZIP with configurable font size and 1–4 page columns. The paper excludes correct-answer markers and explanations. The answer key has a separate CSV download. Equations export as LaTeX text; diagrams export as PNG, and image export requires an image source accessible to the browser. Unsupported image or table conversion fails with an error rather than silently losing content. Existing embedded comprehensions remain embedded; the editor does not migrate them.

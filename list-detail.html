@@ -31,6 +31,12 @@
                     <span id="listOwnerLabel"></span>
                 </div>
             </div>
+            <div id="detailArchiveToolbar" class="content-toolbar" hidden>
+                <label><input id="detailSelectAll" type="checkbox"> Select all my unarchived questions</label>
+                <span id="detailSelectedCount" aria-live="polite">0 selected</span>
+                <button id="detailArchiveSelected" class="btn danger" type="button" disabled>Archive selected</button>
+                <p id="detailArchiveStatus" role="status" aria-live="polite"></p>
+            </div>
             <div id="listItems" class="question-grid"></div>
         </section>
     </main>

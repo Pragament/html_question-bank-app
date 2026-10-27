@@ -1,3 +1,4 @@
+import { listOptionOrder } from './paper-core.js';
 import { PASSAGES_COLLECTION, referencesPassage, loadPassages, questionPromptHtml } from './comprehension.js';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -16,6 +17,8 @@ import {
     getDocs,
     getFirestore,
     query,
+    serverTimestamp,
+    writeBatch,
     where
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -54,6 +57,75 @@ const db = getFirestore(app);
 const $ = (id) => document.getElementById(id);
 const listId = new URLSearchParams(window.location.search).get('id');
 let taxonomyById = new Map();
+let currentUser = null;
+let currentList = null;
+let loadedQuestions = [];
+let selectedQuestionIds = new Set();
+let archiveSaving = false;
+let loadVersion = 0;
+
+function archiveCandidates() {
+    return currentUser ? loadedQuestions.filter(q => q.authorUid === currentUser.uid && q.status !== 'archived') : [];
+}
+function updateArchiveControls() {
+    const candidates = archiveCandidates();
+    const eligible = new Set(candidates.map(q => q.id));
+    selectedQuestionIds = new Set([...selectedQuestionIds].filter(id => eligible.has(id)));
+    $('detailArchiveToolbar').hidden = !currentUser || (!candidates.length && !$('detailArchiveStatus').textContent);
+    $('detailSelectAll').checked = candidates.length > 0 && selectedQuestionIds.size === candidates.length;
+    $('detailSelectAll').indeterminate = selectedQuestionIds.size > 0 && selectedQuestionIds.size < candidates.length;
+    $('detailSelectAll').disabled = archiveSaving || !candidates.length;
+    $('detailSelectedCount').textContent = `${selectedQuestionIds.size} selected`;
+    $('detailArchiveSelected').disabled = archiveSaving || !selectedQuestionIds.size;
+    document.querySelectorAll('[data-detail-archive-select]').forEach(input => {
+        input.checked = selectedQuestionIds.has(input.dataset.detailArchiveSelect);
+        input.disabled = archiveSaving;
+    });
+}
+$('detailSelectAll').addEventListener('change', event => {
+    selectedQuestionIds = new Set(event.target.checked ? archiveCandidates().map(q => q.id) : []);
+    updateArchiveControls();
+});
+$('listItems').addEventListener('change', event => {
+    const id = event.target.dataset.detailArchiveSelect;
+    if (!id || archiveSaving) return;
+    if (event.target.checked) selectedQuestionIds.add(id);
+    else selectedQuestionIds.delete(id);
+    updateArchiveControls();
+});
+$('detailArchiveSelected').addEventListener('click', archiveSelectedQuestions);
+
+async function archiveSelectedQuestions() {
+    if (archiveSaving || !currentUser) return;
+    const ownerUid = currentUser.uid;
+    const rows = archiveCandidates().filter(q => selectedQuestionIds.has(q.id));
+    if (!rows.length) return;
+    if (!window.confirm(`Archive ${rows.length} of your authored questions? This archives them in the question bank and every list using them. They remain referenced in this list.`)) return;
+    archiveSaving = true;
+    updateArchiveControls();
+    let archived = 0;
+    try {
+        for (const group of chunk(rows, 400)) {
+            if (currentUser?.uid !== ownerUid) throw new Error('The signed-in account changed.');
+            const batch = writeBatch(db);
+            group.forEach(q => batch.update(doc(db, COLLECTIONS.questions, q.id), {
+                status: 'archived', previousStatus: q.status || 'published',
+                updatedAt: serverTimestamp(), archivedAt: serverTimestamp()
+            }));
+            await batch.commit();
+            archived += group.length;
+            group.forEach(q => { q.previousStatus = q.status || 'published'; q.status = 'archived'; selectedQuestionIds.delete(q.id); });
+        }
+        $('detailArchiveStatus').textContent = `${archived} question${archived === 1 ? '' : 's'} archived.`;
+    } catch (error) {
+        console.error('List bulk archive failed', error);
+        $('detailArchiveStatus').textContent = `${archived} archived. Remaining questions were not archived: ${error.message}`;
+    } finally {
+        archiveSaving = false;
+        if (currentUser?.uid === ownerUid && currentList) renderList(currentList, loadedQuestions);
+        else updateArchiveControls();
+    }
+}
 
 if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
@@ -65,6 +137,13 @@ $('detailLoginBtn').addEventListener('click', async () => {
 $('detailLogoutBtn').addEventListener('click', () => signOut(auth));
 
 onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    loadVersion++;
+    currentList = null;
+    loadedQuestions = [];
+    selectedQuestionIds.clear();
+    $('detailArchiveStatus').textContent = '';
+    updateArchiveControls();
     $('detailLoginBtn').hidden = !!user;
     $('detailLogoutBtn').hidden = !user;
     $('detailUserLabel').textContent = user ? user.displayName || user.email || 'Signed in' : '';
@@ -77,6 +156,7 @@ onAuthStateChanged(auth, (user) => {
 });
 
 async function loadListDetail() {
+    const version = ++loadVersion;
     if (!listId) {
         renderError('No list id was provided in the URL.');
         return;
@@ -84,6 +164,7 @@ async function loadListDetail() {
 
     try {
         const listSnap = await withTimeout(getDoc(doc(db, COLLECTIONS.lists, listId)), 12000);
+        if (version !== loadVersion) return;
         if (!listSnap.exists()) {
             renderError('List not found.');
             return;
@@ -92,8 +173,10 @@ async function loadListDetail() {
         const list = { id: listSnap.id, ...listSnap.data() };
         await loadTaxonomy();
         const questions = await loadQuestions(list.questionIds || []);
+        if (version !== loadVersion) return;
         renderList(list, questions);
     } catch (error) {
+        if (version !== loadVersion) return;
         renderError(`Could not load list: ${error.message}`);
     }
 }
@@ -125,17 +208,24 @@ function withTimeout(promise, ms) {
 }
 
 function renderList(list, questions) {
+    currentList = list;
+    loadedQuestions = questions;
     $('listTitle').textContent = list.name || 'Question List';
     $('listStatus').textContent = `List ID: ${list.id}`;
     $('listOwnerLabel').textContent = list.ownerUid ? `Owner: ${list.ownerUid}` : '';
     $('listQuestionCount').textContent = `${questions.length} question${questions.length === 1 ? '' : 's'}`;
     $('listItems').innerHTML = questions.length
-        ? questions.map(questionCard).join('')
+        ? questions.map(q => questionCard(q.type === 'mcq' ? { ...q, options: listOptionOrder(list, q.id).map(index => q.options?.[index]).filter(Boolean) } : q)).join('')
         : '<div class="empty-card">No questions in this list.</div>';
+    updateArchiveControls();
     renderMathAndDiagrams($('listItems'));
 }
 
 function renderError(message) {
+    currentList = null;
+    loadedQuestions = [];
+    selectedQuestionIds.clear();
+    updateArchiveControls();
     $('listStatus').textContent = message;
     $('listItems').innerHTML = `<div class="empty-card">${esc(message)}</div>`;
 }
@@ -144,6 +234,7 @@ function questionCard(q) {
     return `
         <article class="question-card">
             <div class="question-card-head">
+                ${currentUser && q.authorUid === currentUser.uid && q.status !== 'archived' ? `<label><input type="checkbox" data-detail-archive-select="${esc(q.id)}" aria-label="Select authored question for archiving" ${selectedQuestionIds.has(q.id) ? 'checked' : ''} ${archiveSaving ? 'disabled' : ''}> Select</label>` : ''}
                 <span class="type-chip">${TYPE_LABELS[q.type] || esc(q.type || 'Question')}</span>
                 <span class="status-chip ${esc(q.status || 'published')}">${esc(q.status || 'published')}</span>
             </div>
