@@ -492,7 +492,7 @@ function bindEvents() {
     els.listStatusFilter.addEventListener('change', renderLists);
     $('clearFiltersBtn').addEventListener('click', clearFilters);
 
-    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptCustomRequirements', 'promptImagePaper'].forEach(id => {
+    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptCustomRequirements', 'promptImagePaper', 'promptDetail'].forEach(id => {
         $(id).addEventListener('input', renderPrompt);
         $(id).addEventListener('change', renderPrompt);
     });
@@ -3069,6 +3069,45 @@ Custom requirements:
 ${customRequirements}
 
 Apply these custom requirements while preserving the selected taxonomy, CSV format, and metadata rules above.` : ''}`;
+    const detail = $('promptDetail')?.value || 'detailed';
+    if (['simplest', 'simple', 'intermediate'].includes(detail)) {
+        els.aiPromptText.textContent = `Create import-ready CSV questions for students in India.
+Headers (exact order):
+${headers}
+
+${classRequirement}
+${subjectRequirement}
+${chapterRequirement}
+${topicRequirement}
+- Copy selected taxonomy labels exactly; do not invent labels or IDs. If selections are missing, ask for them before generating.
+${difficultyRequirement}
+${typeRequirement}
+${promptDetailRequirement(detail)}
+${diagramRequirement}
+${outputRequirement}${customRequirements ? `\n\nCustom requirements (preserve taxonomy and CSV rules):\n${customRequirements}` : ''}`;
+    }
+
+}
+
+function promptDetailRequirement(detail) {
+    const core = `- Use clear, age-appropriate English with accurate Hindi translations (language=Hindi). Translate questions, answers, explanations, and MCQ options in their matching columns.
+- MCQ: four options, correct_options=A|B etc.; true_false: true_false_answer=true/false; fib: fib_banks="Blank 1:answer|alternative;Blank 2:answer"; short_answer: short_answer. Leave other types' answer fields blank.
+- Shuffle MCQ options unpredictably; keep translations paired and recompute correct letters. Avoid answer-position patterns and duplicate questions.
+- Include an explanation and its Hindi translation. verified=false. Leave sectionId, explanationUrl, skill, and ACTFL fields blank unless valid supplied/applicable values are available; never invent IDs or URLs.
+- Use optional KaTeX-compatible LaTeX with literal \\( ... \\) or \\[ ... \\]. Never output raw HTML.
+- Include the header once and exactly ${TEMPLATE_HEADERS.length} cells per row. Map fields to headers, quote every cell (empty=""), escape internal quotes as "", and validate column alignment and answers.`;
+    if (detail === 'simplest') return core;
+    const simple = `${core}
+- Use familiar Indian contexts, metric units, and rupees where relevant. Respect exact counts and zero exclusions; blank counts mean Auto.
+- Make MCQ distractors plausible and similarly worded. Avoid "all of the above" and letter-dependent options. Keep answers and mathematical notation consistent in both languages.
+- skill, if applicable: ${QUESTION_METADATA_VALUES.skill.join(', ')}. actfl_level: ${QUESTION_METADATA_VALUES.actfl_level.join(', ')}; actfl_sublevel: Low/Mid/High only for Novice/Intermediate/Advanced, otherwise blank; actfl_mode: ${QUESTION_METADATA_VALUES.actfl_mode.join(', ')}. Use English enum values.`;
+    if (detail === 'simple') return simple;
+    return `${simple}
+- Spread single-correct MCQ answers approximately evenly across A–D without a repeating cycle; vary multiple-correct combinations. Do not force equal counts in tiny sets. Verify explanations after shuffling.
+- Keep each row within its selected class, subject, chapter, and exactly one selected topic. Hindi translations must not replace taxonomy labels. Preserve numbers, formulas, blanks, and option order in translations.
+- Do not reveal answers in diagrams or option formatting. Keep notation and diagram markers inside quoted CSV cells, with single LaTeX backslashes and no nested code fences.
+- Generate distinct questions with varied reasoning and application. For Auto counts, prefer FIB and short answers when allowed.
+- Parse the completed CSV back: check every cell against its header, type-specific fields, metadata enums, valid answers, exact counts, and duplicates. Repair shifted columns; omit validation messages and extra columns.`;
 }
 
 function promptOutputRequirement(includeImagePaper, allTypesZero) {

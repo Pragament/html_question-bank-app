@@ -435,6 +435,16 @@
                             <option selected>Mixed</option>
                         </select>
                     </label>
+                    <label class="field">
+                        <span>Prompt detail</span>
+                        <select id="promptDetail">
+                            <option value="simplest">Simplest</option>
+                            <option value="simple">Simple</option>
+                            <option value="intermediate">Intermediate</option>
+                            <option value="detailed" selected>Detailed</option>
+                        </select>
+                        <small>Controls instruction detail, independently of question difficulty.</small>
+                    </label>
                     <fieldset class="wide prompt-diagram-format">
                         <legend>Diagram format (optional, when appropriate)</legend>
                         <label><input type="radio" name="promptDiagramFormat" value="none" checked> None</label>
