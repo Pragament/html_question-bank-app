@@ -279,7 +279,7 @@ function translationSummary(q) {
 async function renderMathAndDiagrams(root) {
     root.querySelectorAll('.math-token').forEach(token => {
         const latex = token.dataset.latex;
-        if (latex && window.katex) token.innerHTML = window.katex.renderToString(latex, { throwOnError: false });
+        if (latex && window.katex) token.innerHTML = window.katex.renderToString(latex, { throwOnError: false, displayMode: token.dataset.display === 'block' });
     });
     if (!window.mermaid) return;
     for (const token of root.querySelectorAll('.mermaid-token')) {

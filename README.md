@@ -102,3 +102,21 @@ Download CSV, an answer-key CSV, or a DOCX question paper with adjustable 8–20
 Core regression tests: `node --test tests/*.test.cjs`. See `FIRESTORE_SCHEMA.md` for paper fields, bank picker indexes, and integration details for external quiz consumers.
 
 Browser regression (with Playwright installed and the server running at port 8000): `node tests/paper-browser.cjs`. Firebase calls are mocked so it never writes live data. Optional environment variables: `PAPER_TEST_URL`, `PAPER_TEST_OUTPUT`, `PLAYWRIGHT_MODULE`, and `PLAYWRIGHT_EXECUTABLE`.
+
+AI-generated CSV supports inline LaTeX `\( ... \)`, display LaTeX `\[ ... \]`, and Mermaid source enclosed in `[mermaid] ... [/mermaid]` in question, MCQ option, and short-answer cells. The importer converts notation markers and the Markdown data images below into math/diagram content; arbitrary HTML remains escaped. The prompt requests notation only when it helps the topic and preserves the CSV column structure.
+
+The Prompt Builder's diagram radio buttons select Mermaid, Base64 image, or SVG image. CSV accepts Mermaid markers and Markdown data images such as `![Diagram](data:image/png;base64,...)` or `![Diagram](data:image/svg+xml,PERCENT_ENCODED_SVG)`. SVG Markdown images are sanitized before rendering. Raw HTML `<img>` and `<svg>` are displayed as escaped text, not rendered. The selected image format is requested only when appropriate; the prompt forbids fabricated image bytes or placeholder base64.
+
+
+## Shared rich authoring tools
+
+`rich-authoring.js` and `rich-authoring.css` provide shared insertion tools for the MCQ paper editor and the bank's new/edit question dialog. The bank dialog uses one sticky toolbar for questions, options, passages, and text fields. Paste PNG/JPEG/GIF/WebP images directly into an editable area; asynchronous reads keep the original cursor destination. Other authors' read-only questions remain protected.
+
+**Equation** opens searchable formula categories with favorites, recent/saved equations, a MathLive visual field synchronized with LaTeX, and a live KaTeX preview. **Diagram** opens Mermaid templates, code editing, previews, zoom/fit, and saved diagrams; insertion produces a PNG so existing DOCX export can include it. **Table / Markdown** opens Toast UI with Markdown and WYSIWYG modes for headings, lists, tables, code, and formatted content. **Image** supports upload or URL insertion. Use Ctrl/Command+Enter to insert from the shared dialog, or Escape to cancel. In plain text fields the tools insert text/Markdown equivalents.
+
+MathLive 0.101.1 and Toast UI 3.2.2 load on demand from their CDNs. Formulas, favorites, and diagram templates are stored locally; no backend schema changes are required. `node tests/rich-authoring-browser.cjs` checks real editor libraries with mocked Firebase. It supports the same Playwright/runtime environment variables as the paper browser regression.
+
+
+Both shared toolbars include **Image Library**, which reads `qb_image_crop_library_v1` saved by `image-utility.html` on the same browser origin. Search saved crops, choose one, optionally edit its description, and insert the current processed image at the saved cursor. The picker provides an Image Utility link and a refresh button, and refreshes when another tab changes the library. It does not alter saved library images.
+
+The AI Prompt Builder optionally requests matching PNG/JPEG question-paper pages alongside the CSV, with answers kept off the student paper. “Set all question types to 0” resets every count; zero excludes a type and blank means Auto. All-zero counts request only a CSV header, with no blank image pages.

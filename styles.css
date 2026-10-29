@@ -916,3 +916,67 @@ a {
 #comprehensionEditor[hidden] { display: none; }
 
 .comprehension-navigation[hidden] { display: none; }
+
+.import-table .import-option,
+.import-table .import-translation {
+    margin-bottom: 10px;
+}
+
+.import-table .mermaid-token {
+    min-width: 180px;
+    max-width: 300px;
+    overflow: auto;
+}
+
+.import-table .mermaid-token svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.import-table .katex-display {
+    max-width: 300px;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.import-table .svg-token {
+    display: block;
+    width: 280px;
+    max-width: 100%;
+    overflow: auto;
+}
+
+.svg-token > svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.import-table .csv-embedded-image {
+    display: block;
+    max-width: 280px;
+    max-height: 300px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    margin: 8px 0;
+}
+
+.prompt-diagram-format {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px;
+}
+.prompt-diagram-format label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.prompt-diagram-format input {
+    width: auto;
+}

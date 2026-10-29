@@ -6,7 +6,7 @@ const fs=require('fs');
 (async()=>{
 const browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_EXECUTABLE ? {executablePath:process.env.PLAYWRIGHT_EXECUTABLE} : {})});const page=await browser.newPage({viewport:{width:390,height:844},acceptDownloads:true});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')console.log('BROWSER',m.text())});
-await page.route('https://cdn.jsdelivr.net/**',route=>route.abort());
+
 await page.route('https://www.gstatic.com/firebasejs/**',async route=>{
  const url=route.request().url();let body='';
  if(url.includes('firebase-app'))body='export const initializeApp=()=>({});';
@@ -61,14 +61,25 @@ if(!(await page.locator('[data-passage-text]').textContent()).includes('Edited s
 if(await page.inputValue('#paperIdentifier')!=='Set A')throw Error('Original paper settings changed by copy');
 if(await page.locator('[data-layout]').first().inputValue()!=='4x1')throw Error('Layout override lost on reopening');
 const firstPrompt=page.locator('[data-field="promptHtml"]').first();await firstPrompt.focus();await page.keyboard.press('End');
-await page.getByRole('button',{name:'Equation',exact:true}).click();await page.fill('#insertValue','x^2 + y^2');await page.locator('#insertForm button[type=submit]').click();
+await page.getByRole('button',{name:'Equation',exact:true}).click();await page.fill('#authoringSource','x^2 + y^2');await page.click('#authoringInsert');
 if(!(await firstPrompt.innerHTML()).includes('data-latex'))throw Error('Shared toolbar insertion');
 const imageData=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=180;canvas.height=70;const ctx=canvas.getContext('2d');ctx.fillStyle='#eef6f4';ctx.fillRect(0,0,180,70);ctx.fillStyle='#155d58';ctx.font='18px sans-serif';ctx.fillText('Illustration',25,40);return canvas.toDataURL('image/png');});
-await firstPrompt.focus();await page.getByRole('button',{name:'Image',exact:true}).click();await page.fill('#insertValue',imageData);await page.locator('#insertForm button[type=submit]').click();
-await firstPrompt.focus();await page.getByRole('button',{name:'Table',exact:true}).click();await page.fill('#insertValue','2x2');await page.locator('#insertForm button[type=submit]').click();
+await firstPrompt.focus();await page.getByRole('button',{name:'Image',exact:true}).click();await page.fill('#authoringImageUrl',imageData);await page.click('#authoringInsert');
+await firstPrompt.focus();await page.getByRole('button',{name:'Table / Markdown',exact:true}).click();
+await page.waitForFunction(()=>document.querySelector('#authoringToastHost .toastui-editor-defaultUI'));
+await page.locator('#authoringToastHost .toastui-editor-mode-switch .tab-item').filter({hasText:'Markdown'}).click();
+await page.locator('#authoringToastHost .toastui-editor-md-container .ProseMirror').fill('| Item | Value |\n| --- | --- |\n| a | b |');
+await page.click('#authoringInsert');
+if(await firstPrompt.locator('table').count()!==1)throw Error('Markdown table insertion');
 
+await page.locator('#imageSize').fill('50');
+await page.waitForFunction(()=>document.querySelector('#paperPreview img')?.style.width==='90px');
+if(await page.locator('#imageSizeValue').textContent()!=='50%')throw Error('Image size output');
+await page.locator('#imageSize').fill('150');
+await page.waitForFunction(()=>document.querySelector('#paperPreview img')?.style.width==='270px');
 await page.locator('#textSize').fill('12');await page.selectOption('#paperColumns','2');
 const dl=page.waitForEvent('download');await page.click('#downloadDocx');const download=await dl;await download.saveAs(path.join(output,'paper-editor-test.docx'));
+if(!fs.readFileSync(path.join(output,'paper-editor-test.docx')).includes(Buffer.from('cx="2571750" cy="1000125"')))throw Error('DOCX image size does not match 150%');
 for(const columns of ['1','4']){await page.selectOption('#paperColumns',columns);const next=page.waitForEvent('download');await page.click('#downloadDocx');await(await next).saveAs(path.join(output,`paper-editor-${columns}-columns.docx`));}
 
 const csv=page.waitForEvent('download');await page.click('#downloadCsv');await(await csv).saveAs(path.join(output,'paper-editor-test.csv'));

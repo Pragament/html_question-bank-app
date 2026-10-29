@@ -9,6 +9,7 @@ export async function downloadPaperDocx({title,items,passages,settings,clean,dow
     const columns = Math.max(1,Math.min(4,settings.columns));
     const pageWidth = 10466; // A4 minus 720 twips on each side.
     const columnWidth = Math.floor((pageWidth - (columns-1)*360)/columns);
+    const imageScale = Math.max(25, Math.min(200, Number(settings.imageSize) || 100)) / 100;
     let drawingId = 0;
     const run = (value, properties='') => {
         const tags=new Map([...properties.matchAll(/<w:(\w+)\b[^>]*\/>/g)].map(match=>[match[1],match[0]]));
@@ -31,7 +32,7 @@ export async function downloadPaperDocx({title,items,passages,settings,clean,dow
             files[`word/media/${name}`]=new Uint8Array(await png.arrayBuffer());relationships.push(`<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${name}"/>`);
             image={id,width:canvas.width,height:canvas.height};images.set(src,image);
         }
-        const width=Math.min(maxWidth*635,image.width*9525,Math.floor(9*914400*image.width/image.height)),height=Math.round(width*image.height/image.width),id=++drawingId;
+        const width=Math.min(maxWidth*635,image.width*9525*imageScale,Math.floor(9*914400*image.width/image.height)),height=Math.round(width*image.height/image.width),id=++drawingId;
         return `<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${width}" cy="${height}"/><wp:docPr id="${id}" name="Illustration ${id}" descr="${xml(element.alt || 'Illustration')}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="${id}" name="Illustration ${id}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${image.id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${width}" cy="${height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>`;
     }
     async function inline(node,properties='',width=columnWidth) {

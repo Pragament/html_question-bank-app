@@ -8,6 +8,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
     <script type="module" src="question-paper.js"></script>
+    <link rel="stylesheet" href="rich-authoring.css">
 </head>
 <body>
 <a href="#paperSettings" class="skip-link">Skip to paper settings</a>
@@ -39,18 +40,18 @@
     </section>
     <div class="editor-dock" role="region" aria-label="Shared text formatting and default layout">
         <div id="formatToolbar" role="toolbar" aria-label="Format the active editor">
-            <button type="button" data-format="bold" aria-label="Bold"><b>B</b></button><button type="button" data-format="italic" aria-label="Italic"><i>I</i></button><button type="button" data-format="code">Code</button><button type="button" data-format="equation">Equation</button><button type="button" data-format="image">Image</button><button type="button" data-format="table">Table</button><button type="button" data-format="diagram">Diagram</button>
+            <button type="button" data-format="bold" aria-label="Bold"><b>B</b></button><button type="button" data-format="italic" aria-label="Italic"><i>I</i></button><button type="button" data-format="code">Code</button><button type="button" data-format="equation">Equation</button><button type="button" data-format="image">Image</button><button type="button" data-format="image-library">Image Library</button><button type="button" data-format="table">Table / Markdown</button><button type="button" data-format="diagram">Diagram</button>
         </div>
         <label>Default options <select id="defaultLayout"><option value="1x4">1 × 4 — one row</option><option value="2x2" selected>2 × 2</option><option value="4x1">4 × 1 — one column</option></select></label>
-        <span id="editorTarget" class="muted">Focus a text area to format it</span>
+        <span id="editorTarget" class="muted">Focus a text area to format it. Paste images directly at the cursor.</span>
     </div>
     <section id="passages" aria-label="Shared comprehension passages"></section>
     <section id="questions" aria-label="Questions"></section>
     <div id="empty" class="empty panel">Start with an empty question or choose questions from the bank.</div>
-    <section class="panel" aria-labelledby="exportTitle"><h2 id="exportTitle">Download question paper</h2><div class="actions"><label>Text size <input id="textSize" type="range" min="8" max="20" value="11"><output id="textSizeValue" for="textSize">11 pt</output></label><label>DOCX columns <select id="paperColumns"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><button id="downloadDocx" type="button" class="primary">Download DOCX</button><button id="downloadCsv" type="button">Export CSV</button></div><p class="muted">The question paper excludes answers. The answer key below can be downloaded separately. Equations export as their formula text; diagrams and images export as images.</p><div id="paperPreview" aria-label="Question paper preview"></div></section>
+    <section class="panel" aria-labelledby="exportTitle"><h2 id="exportTitle">Download question paper</h2><div class="actions"><label>Text size <input id="textSize" type="range" min="8" max="20" value="11"><output id="textSizeValue" for="textSize">11 pt</output></label><label>Image size <input id="imageSize" type="range" min="25" max="200" step="5" value="100"><output id="imageSizeValue" for="imageSize">100%</output></label><label>DOCX columns <select id="paperColumns"><option>1</option><option>2</option><option>3</option><option>4</option></select></label><button id="downloadDocx" type="button" class="primary">Download DOCX</button><button id="downloadCsv" type="button">Export CSV</button></div><p class="muted">The question paper excludes answers. The answer key below can be downloaded separately. Equations export as their formula text; diagrams and images export as images.</p><div id="paperPreview" aria-label="Question paper preview"></div></section>
     <section class="panel" aria-labelledby="keyTitle"><div class="actions"><h2 id="keyTitle">Answer key</h2><button id="downloadKey" type="button">Download key CSV</button></div><div class="table-scroll"><table><thead><tr><th scope="col">Question</th><th scope="col">Correct options</th><th scope="col">Full marks rule</th></tr></thead><tbody id="answerKey"></tbody></table></div><p>A wrong option selected along with a correct option is always marked wrong.</p></section>
 </main>
 <dialog id="bankDialog"><div class="actions"><h2>Choose MCQ questions</h2><button id="closeBank" type="button">Close</button></div><label>Filter loaded questions <input id="bankSearch" type="search" placeholder="Question text or author"></label><p id="bankStatus" role="status"></p><div id="bankResults"></div><button id="moreBank" type="button">Load more</button></dialog>
-<dialog id="insertDialog"><form id="insertForm"><h2 id="insertTitle">Insert</h2><label id="insertLabel">Content<textarea id="insertValue" rows="5"></textarea></label><p id="insertHint"></p><div class="actions"><button type="button" id="cancelInsert">Cancel</button><button type="submit" class="primary">Insert</button></div></form></dialog>
+
 </body>
 </html>

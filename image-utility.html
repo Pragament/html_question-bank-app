@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Image crop library</title><link rel="stylesheet" href="image-utility.css"><script src="image-utility.js" defer></script></head>
+<body>
+<header><div><span class="eyebrow">QUESTION BANK TOOLS</span><h1>Image crop library</h1><p>One page. Multiple crops. Ready to paste.</p></div><a href="index.html">Question bank ↗</a></header>
+<main>
+<section class="panel"><div class="section-heading"><h2>1. Select your crops</h2><label class="button primary">Upload image<input id="upload" type="file" accept="image/*" hidden></label></div>
+<p>Drag on empty image space to add crops. Drag inside a rectangle to move it; select a crop and drag its corner or edge handles to resize. Hold Shift to draw an overlapping crop. Delete removes the selected crop. Pinch with two fingers to zoom and pan. Enable Pan mode to pan with one finger or the mouse.</p>
+<div class="toolbar"><button id="undo" disabled>Undo last crop</button><button id="clear" disabled>Clear crops</button><button id="save" class="primary" disabled>Save crops to library</button><button id="pan" aria-pressed="false">Pan mode</button><label>Zoom <select id="zoom"><option value="fit">Fit width</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="custom" hidden>Custom</option></select></label><span id="crop-count">0 crops</span></div>
+<div id="workspace" class="workspace"><div id="empty">Upload a worksheet, photo, or scanned page to begin.<small>Your images stay in this browser.</small></div><canvas id="source" hidden aria-label="Image crop canvas. Drag empty space to draw, drag inside crops to move, and drag selected handles to resize." tabindex="0"></canvas></div>
+<div id="crop-list" class="crop-list" aria-label="Selected crop areas"></div>
+</section>
+<section class="panel"><div class="section-heading"><div><h2>2. Your image library <span id="library-count" class="badge">0</span></h2><p>Saved in local storage on this device. Copy any image directly into your editor.</p></div><button id="download-all" disabled>Download all</button></div>
+<div class="toolbar"><label>Apply to <select id="scope"><option value="all">All library images</option><option value="selected">Selected images</option></select></label><button id="grayscale" disabled>Grayscale</button><button id="bw" disabled>Black &amp; white · no gray</button><label>Threshold <input id="threshold" type="range" min="0" max="255" value="170"><output id="threshold-value">170</output></label><button id="restore" disabled>Restore originals</button><button id="select-all" disabled>Select all</button><button id="delete-selected" disabled>Delete selected</button></div>
+<p class="hint">Grayscale and black &amp; white process the current image, including applied compression. Black &amp; white saves as PNG to keep pixels pure black or white. Restore originals reverses all changes. Downloads preserve a copy outside this browser.</p>
+<div class="toolbar compression"><label>Compression quality <input id="quality" type="range" min="10" max="100" value="80"><output id="quality-value">80%</output></label><label>Format <select id="compression-format"><option value="image/jpeg">JPEG</option><option value="image/webp">WebP</option></select></label><button id="compress" disabled>Apply compression</button><span id="compression-summary" role="status">No images to compress.</span></div>
+<p class="hint">Move the slider to preview compressed images and their file sizes. Apply compression saves the preview to the library. Originals remain available. Transparent areas become white. File sizes describe image files, not browser storage usage.</p>
+<div id="library" class="library"></div>
+</section>
+</main><div id="status" role="status" aria-live="polite">Ready. Upload an image to start.</div>
+</body></html>

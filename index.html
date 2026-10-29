@@ -10,6 +10,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/intro.js@8.5.0/minified/intro.min.js"></script>
+    <link rel="stylesheet" href="rich-authoring.css">
 </head>
 <body>
     <header class="app-header">
@@ -180,6 +181,18 @@
             <div class="modal-head">
                 <h2 id="questionDialogTitle">New Question</h2>
                 <button class="icon-btn" value="cancel" type="button" id="closeQuestionDialog">Close</button>
+            </div>
+
+            <div id="questionFloatingToolbar" class="question-editor-dock" role="toolbar" aria-label="Question editor formatting">
+                <button type="button" data-author-command="bold" aria-label="Bold"><b>B</b></button>
+                <button type="button" data-author-command="italic" aria-label="Italic"><i>I</i></button>
+                <button type="button" data-author-command="code">Code</button>
+                <button type="button" data-author-insert="equation">Equation</button>
+                <button type="button" data-author-insert="image">Image</button>
+                <button type="button" data-author-insert="image-library">Image Library</button>
+                <button type="button" data-author-insert="table">Table / Markdown</button>
+                <button type="button" data-author-insert="diagram">Diagram</button>
+                <small id="questionEditorTarget">Focus a text area to format it. Paste images directly at the cursor.</small>
             </div>
 
             <label class="field" id="comprehensionModeField">
@@ -404,6 +417,14 @@
                             <input id="pickTrueFalseCount" type="number" min="0" step="1" value="3" placeholder="Auto" />
                         </label>
                     </div>
+                    <div class="prompt-actions wide">
+                        <button class="btn" type="button" id="zeroQuestionTypesBtn">Set all question types to 0</button>
+                        <span id="promptCountStatus" class="prompt-note" role="status" aria-live="polite">0 excludes a type; leave a count blank for Auto.</span>
+                    </div>
+                    <label class="check-row wide">
+                        <input id="promptImagePaper" type="checkbox">
+                        <span>Generate an image question paper along with the CSV (PNG/JPEG pages of the same questions)</span>
+                    </label>
                     <p class="prompt-note wide">Recommended: use more FIB and short-answer questions, with fewer MCQ and true/false questions, to reduce student guesswork.</p>
                     <label class="field">
                         <span>Difficulty</span>
@@ -414,6 +435,13 @@
                             <option selected>Mixed</option>
                         </select>
                     </label>
+                    <fieldset class="wide prompt-diagram-format">
+                        <legend>Diagram format (optional, when appropriate)</legend>
+                        <label><input type="radio" name="promptDiagramFormat" value="none" checked> None</label>
+                        <label><input type="radio" name="promptDiagramFormat" value="mermaid"> Mermaid</label>
+                        <label><input type="radio" name="promptDiagramFormat" value="base64"> Base64 image (Markdown)</label>
+                        <label><input type="radio" name="promptDiagramFormat" value="svg"> SVG image (Markdown)</label>
+                    </fieldset>
                     <label class="field wide">
                         <span>Custom Requirements (optional)</span>
                         <textarea id="promptCustomRequirements" rows="4" placeholder="For example: Include everyday situations, avoid repeated questions, and focus on application rather than recall."></textarea>

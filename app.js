@@ -1,3 +1,6 @@
+import { createRichAuthoring } from './rich-authoring.js';
+import { csvMarkdownImage } from './csv-images.js';
+import { sanitizeInlineSvg } from './svg-content.js';
 import { PASSAGES_COLLECTION, referencesPassage, loadPassages, questionPromptHtml } from './comprehension.js';
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -344,6 +347,22 @@ if (window.mermaid) {
     window.mermaid.initialize({ startOnLoad: false, theme: 'default' });
 }
 
+const questionAuthoring = createRichAuthoring({
+    selector: '#questionForm .rich-editor[contenteditable="true"], #questionForm textarea, #questionForm .translation-option',
+    clean: sanitizeRich,
+    onError: message => toast(message),
+    onTarget: label => { $('questionEditorTarget').textContent = `${label} · Paste images directly at the cursor.`; }
+});
+$('questionFloatingToolbar').addEventListener('mousedown', event => {
+    if (event.target.closest('button')) event.preventDefault();
+});
+$('questionFloatingToolbar').addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    if (button.dataset.authorCommand) questionAuthoring.command(button.dataset.authorCommand);
+    if (button.dataset.authorInsert) questionAuthoring.open(button.dataset.authorInsert);
+});
+
 bindEvents();
 renderMetadataFilterOptions();
 renderQuestionTaxonomyOptions();
@@ -473,7 +492,7 @@ function bindEvents() {
     els.listStatusFilter.addEventListener('change', renderLists);
     $('clearFiltersBtn').addEventListener('click', clearFilters);
 
-    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptCustomRequirements'].forEach(id => {
+    ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount', 'promptDifficulty', 'promptCustomRequirements', 'promptImagePaper'].forEach(id => {
         $(id).addEventListener('input', renderPrompt);
         $(id).addEventListener('change', renderPrompt);
     });
@@ -495,7 +514,12 @@ function bindEvents() {
         renderPromptTaxonomyOptions();
         renderPrompt();
     });
+    $('zeroQuestionTypesBtn').addEventListener('click', () => {
+        ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount'].forEach(id => { $(id).value = '0'; });
+        renderPrompt();
+    });
     $('promptTopic').addEventListener('change', renderPrompt);
+    document.querySelectorAll('input[name="promptDiagramFormat"]').forEach(input => input.addEventListener('change', renderPrompt));
     $('addPromptChapterBtn').addEventListener('click', addPromptChapter);
     $('addPromptTopicBtn').addEventListener('click', addPromptTopic);
     $('newPromptChapter').addEventListener('keydown', event => {
@@ -1426,6 +1450,7 @@ function openQuestionDialog(question = null) {
         toast('Sign in with Google to create questions');
         return;
     }
+    questionAuthoring.reset();
     activeQuestionId = question?.id || null;
     comprehensionQuestions = [];
     comprehensionIndex = 0;
@@ -1463,6 +1488,7 @@ function openQuestionDialog(question = null) {
 }
 
 function closeQuestionDialog() {
+    questionAuthoring.reset();
     activeQuestionId = null;
     activeEditor = null;
     savedSelectionRange = null;
@@ -2425,7 +2451,7 @@ function toggleFavoriteFormula(latex) {
 async function renderMathAndDiagrams(root) {
     root.querySelectorAll('.math-token').forEach(token => {
         const latex = token.dataset.latex;
-        if (latex && window.katex) token.innerHTML = window.katex.renderToString(latex, { throwOnError: false });
+        if (latex && window.katex) token.innerHTML = window.katex.renderToString(latex, { throwOnError: false, displayMode: token.dataset.display === 'block' });
     });
     if (!window.mermaid) return;
     for (const token of root.querySelectorAll('.mermaid-token')) {
@@ -2492,6 +2518,7 @@ async function previewImport() {
             invalidSection, $('copyInvalidCsvStatus'), $('invalidCsvText')
         ));
     }
+    await renderMathAndDiagrams(els.importPreview);
 }
 
 function renderValidImportTable(rows) {
@@ -2500,23 +2527,36 @@ function renderValidImportTable(rows) {
         ['Type', row => row.type],
         ['Class / Subject / Chapter / Topic', row => Object.values(row.taxonomyLabels).join(' / ')],
         ['Difficulty', row => row.difficulty],
-        ['Question', row => stripHtml(row.promptHtml)],
-        ['Options', row => row.options.map((option, i) => `${LABELS[i]}: ${stripHtml(option.html)}${option.correct ? ' (correct)' : ''}`).join(' | ')],
-        ['Answer', row => answerText(row)],
+        ['Question', row => sanitizeRich(row.promptHtml || ''), true],
+        ['Options', row => row.options.map((option, i) => `<div class="import-option"><strong>${LABELS[i]}:</strong> ${sanitizeRich(option.html || '')}${option.correct ? ' <strong>(correct)</strong>' : ''}</div>`).join(''), true],
+        ['Answer', row => answerHtml(row), true],
         ['Section ID', row => row.sectionId],
         ['Verified', row => String(row.verified)],
-        ['Explanation', row => row.explanation],
+        ['Explanation', row => sanitizeRich(csvRichText(row.explanation || '')), true],
         ['Explanation URL', row => row.explanationUrl],
         ['Skill', row => row.skill],
         ['ACTFL Level', row => row.actfl_level],
         ['ACTFL Sublevel', row => row.actfl_sublevel],
         ['ACTFL Mode', row => row.actfl_mode],
-        ['Translations', row => JSON.stringify(row.translations)]
+        ['Translations', row => renderImportTranslations(row.translations), true]
     ];
     return `<div class="import-table-scroll" tabindex="0" role="region" aria-label="Valid questions preview, scroll horizontally to see all columns"><table class="import-table"><caption>Valid questions to import</caption>
         <thead><tr><th scope="col">#</th>${columns.map(([label]) => `<th scope="col">${esc(label)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map((row, index) => `<tr><th scope="row">${index + 1}</th>${columns.map(([, value]) => `<td>${esc(value(row) || '')}</td>`).join('')}</tr>`).join('')}</tbody>
+        <tbody>${rows.map((row, index) => `<tr><th scope="row">${index + 1}</th>${columns.map(([, value, rich]) => `<td>${rich ? value(row) : esc(value(row) || '')}</td>`).join('')}</tr>`).join('')}</tbody>
     </table></div>`;
+}
+
+function renderImportTranslations(translations = {}) {
+    const richText = value => sanitizeRich(csvRichText(value || ''));
+    return Object.entries(translations).map(([language, translation]) => `
+        <div class="import-translation">
+            <strong>${esc(language)}</strong>
+            <div><strong>Question:</strong> ${richText(translation.question)}</div>
+            ${translation.answer ? `<div><strong>Answer:</strong> ${richText(translation.answer)}</div>` : ''}
+            ${(translation.options || []).map((option, index) => option ? `<div><strong>${LABELS[index]}:</strong> ${richText(option)}</div>` : '').join('')}
+            ${translation.explanation ? `<div><strong>Explanation:</strong> ${richText(translation.explanation)}</div>` : ''}
+        </div>
+    `).join('');
 }
 
 function renderImportTaxonomyPlan(rows) {
@@ -2612,6 +2652,43 @@ function renderListFilterOptions() {
     $('listFilterMode').disabled = els.listFilter.disabled;
 }
 
+// Interpret only explicit notation markers; arbitrary CSV HTML remains escaped.
+function csvRichText(value) {
+    const text = String(value || '');
+    const markers = /\\\(([\s\S]*?)\\\)|\\\[([\s\S]*?)\\\]|\[mermaid\]([\s\S]*?)\[\/mermaid\]|(!\[([^\]\r\n]*)\]\((data:image\/[^)\s]+)\))/gi;
+    // Some AI outputs drop the delimiter backslashes but retain LaTeX commands.
+    // Recognize only clear notation here; ordinary parenthetical prose stays text.
+    const escapedText = value => {
+        let result = '', position = 0;
+        for (const match of value.matchAll(/\(([^()\r\n]+)\)/g)) {
+            result += esc(value.slice(position, match.index));
+            const latex = match[1].trim();
+            const looksLikeMath = /\\(?:circ|frac|dfrac|tfrac|sqrt|pi|theta|alpha|beta|gamma|times|div|cdot|pm|leq|geq|neq|angle|triangle|sin|cos|tan|log|ln|sum|int|infty)\b/.test(latex)
+                || /^[A-Za-z0-9+\-*/=^_{}.,\s]+$/.test(latex) && /[A-Za-z0-9}]\s*\^\s*(?:\{[^{}]+\}|[A-Za-z0-9+-]+)/.test(latex);
+            result += looksLikeMath
+                ? `<span class="math-token" data-latex="${esc(latex)}" data-display="inline" contenteditable="false">${esc(latex)}</span>`
+                : esc(match[0]);
+            position = match.index + match[0].length;
+        }
+        return result + esc(value.slice(position));
+    };
+    let html = '', offset = 0;
+    for (const match of text.matchAll(markers)) {
+        html += escapedText(text.slice(offset, match.index));
+        if (match[4] !== undefined) {
+            html += csvMarkdownImage(match[5], match[6], sanitizeInlineSvg) || esc(match[4]);
+        } else if (match[3] !== undefined) {
+            const code = match[3].trim();
+            html += `<div class="mermaid-token" data-code="${esc(code)}"><pre>${esc(code)}</pre></div>`;
+        } else {
+            const latex = (match[1] ?? match[2]).trim();
+            html += `<span class="math-token" data-latex="${esc(latex)}" data-display="${match[2] !== undefined ? 'block' : 'inline'}" contenteditable="false">${esc(latex)}</span>`;
+        }
+        offset = match.index + match[0].length;
+    }
+    return html + escapedText(text.slice(offset));
+}
+
 function parseCsvQuestions(text) {
     const rows = parseCsv(text);
     const errors = [];
@@ -2649,7 +2726,7 @@ function parseCsvQuestions(text) {
             type,
             taxonomyLabels,
             difficulty: row.difficulty || 'Medium',
-            promptHtml: esc(row.question || ''),
+            promptHtml: csvRichText(row.question || ''),
             options: [],
             trueAnswer: true,
             fibBanks: [],
@@ -2668,10 +2745,10 @@ function parseCsvQuestions(text) {
         if (type === 'mcq') {
             const correct = splitMulti(row.correct_options).map(v => v.toUpperCase());
             question.options = LABELS.map(label => ({
-                html: esc(row[`option_${label.toLowerCase()}`] || ''),
+                html: csvRichText(row[`option_${label.toLowerCase()}`] || ''),
                 correct: correct.includes(label)
             }));
-            if (question.options.some(o => !stripHtml(o.html)) || !question.options.some(o => o.correct)) {
+            if (question.options.some(o => !stripHtml(o.html) && !o.html.includes('class="svg-token"') && !o.html.includes('class="csv-embedded-image"')) || !question.options.some(o => o.correct)) {
                 errors.push(`Row ${index + 2}: MCQ needs four options and at least one correct option`);
                 return;
             }
@@ -2684,7 +2761,7 @@ function parseCsvQuestions(text) {
                 return;
             }
         } else {
-            question.shortAnswerHtml = esc(row.short_answer || row.translated_answer || '');
+            question.shortAnswerHtml = csvRichText(row.short_answer || row.translated_answer || '');
         }
         if (row.language) {
             question.translations[row.language] = {
@@ -2924,6 +3001,14 @@ function renderPrompt() {
     const chapter = selectedPromptLabel('promptChapter');
     const topics = selectedPromptLabels('promptTopic');
     const typeRequirement = promptTypeRequirement();
+    const allTypesZero = ['pickMcqCount', 'pickFibCount', 'pickShortAnswerCount', 'pickTrueFalseCount'].every(id => promptTypeCount(id) === 0);
+    const includeImagePaper = $('promptImagePaper')?.checked || false;
+    const outputRequirement = promptOutputRequirement(includeImagePaper, allTypesZero);
+    $('promptCountStatus').textContent = allTypesZero
+        ? 'All types are 0. Set a positive count or leave a count blank for Auto to generate questions.'
+        : '0 excludes a type; leave a count blank for Auto.';
+    const diagramFormat = document.querySelector('input[name="promptDiagramFormat"]:checked')?.value || 'none';
+    const diagramRequirement = promptDiagramRequirement(diagramFormat);
     const difficulty = $('promptDifficulty')?.value || 'Mixed';
     const customRequirements = $('promptCustomRequirements')?.value.trim() || '';
     const classRequirement = className ? `- class must be "${className}".` : '- select a class from the taxonomy before generating final CSV.';
@@ -2935,7 +3020,7 @@ function renderPrompt() {
     const difficultyRequirement = difficulty === 'Mixed'
         ? '- include a balanced spread of Easy, Medium, and Hard questions.\n- each row\'s difficulty field must be exactly one of Easy, Medium, or Hard. Do not use Mixed as a row difficulty.'
         : `- difficulty must be "${difficulty}".\n- each row's difficulty field must exactly match "${difficulty}".`;
-    els.aiPromptText.textContent = `Create import-ready question bank rows as CSV for students in India.
+    els.aiPromptText.textContent = `Create import-ready question bank rows as CSV for students in India.${includeImagePaper && !allTypesZero ? ' Also create an image question paper from exactly the same final questions.' : ''}
 Use exactly these headers:
 ${headers}
 
@@ -2953,11 +3038,15 @@ ${difficultyRequirement}
 ${typeRequirement}
 - Write age-appropriate questions for students in India, aligned with the selected class, subject, chapter, and topics. Use familiar Indian contexts, names, places, metric units, and Indian rupees (₹) where relevant.
 - Keep the original question, options, and model answer in clear English and provide accurate Hindi translations in Devanagari for every row.
-- prefer more FIB and short_answer rows and fewer mcq and true_false rows to reduce student guesswork.
+- Respect exact question counts and zero exclusions above. For Auto counts only, prefer more FIB and short_answer rows when those types are allowed; do not change explicitly requested counts.
 - MCQ rows must have option_a through option_d and correct_options as A, B, C, D, or multiple letters separated by |.
 - Randomize the option order independently for each MCQ so the correct answer is not consistently in the same position. Across the set, spread single-correct answers approximately evenly over A, B, C, and D in an unpredictable order; do not use a repeating cycle such as A, B, C, D or a fixed correct-letter pattern. Do not force equal counts for very small sets.
 - For multiple-correct MCQs, vary the correct-letter combinations without a recurring pattern. After ordering the options, recompute correct_options from the final A-D positions and keep each Hindi translated option paired with its English option. Verify that the answer key and explanation still match the final option order.
 - Make distractors plausible and similar in length, grammar, and detail to the correct answer so wording does not reveal it. Avoid order-dependent choices such as "all of the above", "both A and B", or references to another option's letter, which become invalid when shuffled.
+- Use LaTeX when mathematical notation helps students read a formula, fraction, equation, power, root, or symbol. In question, option_a through option_d, and short_answer cells, enclose inline math in \( ... \) and display math in \[ ... \]. For example: Find \(x\) if \(2x+3=11\). Use KaTeX-compatible LaTeX, with no document preamble or packages. Use ordinary text when notation adds no value.
+${diagramRequirement}
+- A question diagram must not reveal the correct answer or label it as correct. Keep all MCQ choices equally formatted so notation or diagrams do not identify the answer. In Hindi translation cells, preserve the mathematical formulas and diagram relationships; translate surrounding prose and diagram labels as appropriate.
+- Notation markers are literal CSV cell content, not extra columns or Markdown code fences. Do not output raw HTML or separate LaTeX/Mermaid code blocks. Keep each diagram on one physical line; use Mermaid semicolons or a single continuous Markdown data URL as appropriate. Preserve single LaTeX backslashes in the CSV (CSV is not JSON); double only CSV quotation marks as required. Validate formulas, diagram syntax, and the final CSV column count before returning it.
 - FIB rows may contain multiple answer banks in fib_banks like "Blank 1:answer one|answer two;Blank 2:answer".
 - Set language to Hindi for every row. Fill translated_question, translated_answer, and translated_explanation with Hindi translations of the question, answer, and teacher-facing explanation; for MCQs, also fill translated_option_a through translated_option_d in the same order as the English options. Preserve mathematical notation, numbers, blank positions, and the correct answers. Leave translated option columns blank for non-MCQ rows.
 - sectionId must be a supplied existing classSections document ID; leave blank if none is supplied. Never invent IDs.
@@ -2974,12 +3063,33 @@ ${typeRequirement}
 - Keep type-specific values only in their designated columns: MCQ uses option_a through option_d and correct_options; true_false uses true_false_answer (true or false); fib uses fib_banks; short_answer uses short_answer. Leave other types' answer columns empty. translated_answer belongs only in its translation column.
 - Keep sectionId, verified, explanation, explanationUrl, skill, actfl_level, actfl_sublevel, actfl_mode, and translated_explanation in their exact positions. Never put an explanation or true/false value in skill, or a skill such as Writing in actfl_level. Use English enum values even when the explanation or translations are in Hindi.
 - Before returning the CSV, parse it back and verify that each row has exactly ${TEMPLATE_HEADERS.length} cells, each value matches its named header, metadata enums are valid, answer keys agree with the question, and there are no duplicate question rows. Repair any shifted columns before output. Do not include validation messages, repeated error summaries, or duplicate headers in the CSV.
-- Return only valid CSV inside one csv code block.${customRequirements ? `
+${outputRequirement}${customRequirements ? `
 
 Custom requirements:
 ${customRequirements}
 
 Apply these custom requirements while preserving the selected taxonomy, CSV format, and metadata rules above.` : ''}`;
+}
+
+function promptOutputRequirement(includeImagePaper, allTypesZero) {
+    if (allTypesZero) return '- All question-type counts are zero: generate no question rows. Return only the CSV header inside one csv code block. Do not generate blank question-paper images.';
+    if (!includeImagePaper) return '- Return only valid CSV inside one csv code block.';
+    return `- Deliver two matching outputs: (1) the import-ready CSV in exactly one csv code block and (2) a downloadable image question paper as actual PNG or JPEG page attachments outside the code block. Do not put paper images, attachment links, or commentary inside CSV cells.
+- Finalize and validate the CSV first, then lay out exactly those questions in the same order and with identical wording, numbers, formulas, diagrams (when enabled), option order, and answer choices. Number questions consecutively. Do not add, omit, or duplicate questions between the two outputs.
+- Use clean A4 portrait pages with a title based on the selected class, subject, chapter, and topics, readable text, clear numbering, and adequate margins and answer space. Render LaTeX as mathematical notation, not literal code. Split across multiple numbered pages when needed; never shrink everything onto an unreadable page or cut a question off at the page boundary.
+- Keep correct-answer markers, answer keys, explanations, and teacher metadata out of the student paper. Keep them in their designated CSV fields. The chosen diagram format controls illustrations within questions; it does not prohibit the requested PNG/JPEG paper pages.
+- Use available image/document rendering tools to create the actual image pages. Do not invent base64 image data, download links, or claim to attach files that were not produced. If image creation is unavailable, still return the valid CSV and briefly state that paper images could not be generated.`;
+}
+
+function promptDiagramRequirement(format) {
+    if (!['mermaid', 'base64', 'svg'].includes(format)) return '- Selected diagram format: None. Do not include diagrams or images inside CSV question/answer cells, including Mermaid source, SVG, and image data URLs. Make every question self-contained in text. A separately requested image question paper is an output format and is still allowed. LaTeX formulas are still allowed when appropriate.';
+    const common = '- Include diagrams only when they improve understanding or assessment of the selected topic. Use only the selected diagram format; do not mix formats. Never output raw HTML, <img> tags, or raw <svg> markup.';
+    if (format === 'base64') return `${common}
+- Selected diagram format: Base64 image in Markdown. Use ![descriptive diagram alt text](data:image/png;base64,ACTUAL_BASE64_IMAGE_DATA) within a question, option, or short_answer cell. JPEG, GIF, and WebP are also supported. Create an accurate diagram and encode the actual image bytes; never invent base64, use placeholders, or encode prose as an image. If an image-generation/encoding tool is unavailable, omit the image and make the question self-contained in text. Keep the data URL on one line.`;
+    if (format === 'svg') return `${common}
+- Selected diagram format: SVG image in Markdown. Create a simple, accurate static SVG with a viewBox, readable labels, and lines/shapes suitable for the topic, then use ![descriptive diagram alt text](data:image/svg+xml,PERCENT_ENCODED_SVG) in a question, option, or short_answer cell. Percent-encode the complete SVG, including spaces, quotes, #, and parentheses; a genuine base64-encoded SVG data URL is also supported. Never output the SVG as a raw HTML element. No scripts, event handlers, external resources, foreignObject, animation, or links. If accurate encoding is unavailable, omit the image and write a self-contained text question.`;
+    return `${common}
+- Selected diagram format: Mermaid. In question, option, or short_answer cells, use [mermaid] ... [/mermaid]. Example: [mermaid]flowchart LR; A[Water] --> B[Heating]; B --> C[Steam];[/mermaid]. Use simple valid syntax, unique node IDs, and short labels. Do not include external links, click actions, HTML labels, or embedded images. Do not use Mermaid for precise geometry or numeric-axis plots it cannot represent accurately; use a text-only question instead.`;
 }
 
 function selectedPromptLabel(id) {
@@ -3012,6 +3122,9 @@ function promptTypeRequirement() {
         .filter(type => !exactTypes.some(exact => exact.id === type.id) && !blockedTypes.includes(type.value));
     const lines = ['- type must be one of mcq, true_false, fib, short_answer.'];
 
+    if (blockedTypes.length === types.length) {
+        lines.push('- All four question types are set to zero: create exactly 0 question rows. Return the header only; do not choose an Auto mix.');
+    }
     if (exactTypes.length) {
         lines.push(`- create exactly ${exactTypes.map(type => `${type.count} ${type.value}`).join(', ')} row${exactTypes.reduce((sum, type) => sum + type.count, 0) === 1 ? '' : 's'}.`);
     }

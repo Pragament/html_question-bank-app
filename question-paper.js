@@ -1,3 +1,4 @@
+import { createRichAuthoring } from './rich-authoring.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { collection, doc, getDoc, getDocs, getFirestore, query, where, or, and, limit, orderBy, documentId, startAfter, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
@@ -10,12 +11,18 @@ const auth = getAuth(app), db = getFirestore(app);
 const $ = id => document.getElementById(id);
 let user = null, taxonomy = [], lists = [], items = [], passages = new Map(), listId = null, listOwner = null;
 let skippedQuestionIds = [], sourceQuestionIds = [];
-let dirty = false, busy = false, activeEditor = null, selection = null, insertion = null, bankRows = [], bankCursor = null;
+let dirty = false, busy = false, activeEditor = null, selection = null, bankRows = [], bankCursor = null;
 const esc = xml;
 // Generate an ID locally through Firebase, including browsers without randomUUID.
 // Creating a document reference does not write anything to Firestore.
 const uid = () => doc(collection(db, 'qb_questions_v1')).id;
-const status = (message, error = false) => { $('status').textContent = message; $('status').classList.toggle('error', error); if (error && $('insertDialog').open) { $('insertHint').textContent=message; $('insertHint').setAttribute('role','alert'); } };
+const paperAuthoring = createRichAuthoring({
+    selector: '.editor[contenteditable="true"]',
+    clean,
+    onError: message => status(message, true),
+    onTarget: label => { $('editorTarget').textContent = `${label} · Paste images directly at the cursor.`; }
+});
+const status = (message, error = false) => { $('status').textContent = message; $('status').classList.toggle('error', error); };
 const canEditList = () => !listOwner || listOwner === user?.uid;
 const canEditQuestion = item => canEditList() && (!item.id || item.data.authorUid === user?.uid);
 const canEditPassage = passage => canEditList() && (!passage.saved || passage.authorUid === user?.uid);
@@ -24,11 +31,12 @@ const text = html => { const div = document.createElement('div'); div.innerHTML 
 function clean(html) {
     const root = document.createElement('template'); root.innerHTML = String(html || '');
     const allowed = new Set(['P','DIV','SPAN','B','STRONG','I','EM','U','S','SUB','SUP','CODE','PRE','BR','HR','UL','OL','LI','TABLE','THEAD','TBODY','TR','TD','TH','IMG','BLOCKQUOTE']);
+    root.content.querySelectorAll('[data-latex]').forEach(token => { token.textContent = token.dataset.latex; });
     root.content.querySelectorAll('script,style,iframe,object,embed,svg,math,form,input,button,select,textarea').forEach(el => el.remove());
     root.content.querySelectorAll('*').forEach(el => {
         if (!allowed.has(el.tagName)) { el.replaceWith(...el.childNodes); return; }
         [...el.attributes].forEach(attr => {
-            const safe = ['alt','title','colspan','rowspan'].includes(attr.name) || (el.tagName === 'IMG' && attr.name === 'src' && /^(https?:\/\/|data:image\/(png|jpeg|gif|webp);base64,)/i.test(attr.value)) || (el.tagName === 'SPAN' && ['data-latex','data-code'].includes(attr.name));
+            const safe = ['alt','title','colspan','rowspan'].includes(attr.name) || (el.tagName === 'IMG' && attr.name === 'src' && /^(https?:\/\/|data:image\/(png|jpeg|gif|webp);base64,)/i.test(attr.value)) || (el.tagName === 'SPAN' && ['data-latex','data-code'].includes(attr.name)) || (el.tagName === 'SPAN' && el.hasAttribute('data-latex') && attr.name === 'contenteditable' && attr.value === 'false');
             if (!safe) el.removeAttribute(attr.name);
         });
     });
@@ -36,7 +44,7 @@ function clean(html) {
 }
 function hasContent(html) { const div = document.createElement('div'); div.innerHTML = clean(html); return !!div.textContent.trim() || !!div.querySelector('img'); }
 function markDirty() { dirty = true; }
-function settings() { return { classId:$('paperClass').value, subjectId:$('paperSubject').value, date:$('paperDate').value, identifier:$('paperIdentifier').value.trim(), defaultOptionsLayout:$('defaultLayout').value, textSize:Number($('textSize').value), columns:Number($('paperColumns').value) }; }
+function settings() { return { classId:$('paperClass').value, subjectId:$('paperSubject').value, date:$('paperDate').value, identifier:$('paperIdentifier').value.trim(), defaultOptionsLayout:$('defaultLayout').value, textSize:Number($('textSize').value), imageSize:Number($('imageSize').value), columns:Number($('paperColumns').value) }; }
 function updateName() { $('paperName').value = listName({ className:label($('paperClass').value), subjectName:label($('paperSubject').value), date:$('paperDate').value, identifier:$('paperIdentifier').value }); }
 function choices(type, parentId, value = '', optional = true) {
     return `<option value="">${optional ? 'Not set' : 'Choose '+type}</option>` + taxonomy.filter(node => node.type === type && (!parentId || node.parentId === parentId)).map(node => `<option value="${esc(node.id)}" ${node.id === value ? 'selected' : ''}>${esc(node.label)}</option>`).join('');
@@ -81,6 +89,8 @@ function render() {
     $('passages').innerHTML = [...passages].map(([id,p],i) => `<article class="passage-card" data-passage="${esc(id)}"><div class="actions"><h2>Comprehension passage ${i+1}</h2><button type="button" data-add-passage-question="${esc(id)}" ${canEditList()?'':'disabled'}>+ Linked question</button></div><p class="muted">Stored once. Editing this passage affects every question that references it.</p>${editor(p.passageHtml,`Comprehension passage ${i+1}`,'data-passage-text',canEditPassage(p))}</article>`).join('');
     $('empty').hidden = !!items.length;
     $('stats').textContent = `${items.length} question${items.length===1?'':'s'} · ${passages.size} passage${passages.size===1?'':'s'}`;
+    paperAuthoring.enhance($('questions'));
+    paperAuthoring.enhance($('passages'));
     refreshOutputs();
 }
 function refreshOutputs() {
@@ -93,6 +103,11 @@ function refreshOutputs() {
         if (p) seen.add(item.data.comprehensionId);
         return `${passage}<div class="preview-question"><strong>${i+1}.${p?` [P${[...passages.keys()].indexOf(item.data.comprehensionId)+1}]`:''}</strong> ${clean(item.data.promptHtml)}<div class="preview-options layout-${item.layout || $('defaultLayout').value}">${item.order.map((original,position)=>`<div>${LETTERS[position]}. ${clean(item.data.options[original].html)}</div>`).join('')}</div></div>`;
     }).join('');
+    $('paperPreview').querySelectorAll('img').forEach(image => {
+        const resize = () => { image.style.width = `${image.naturalWidth * Number($('imageSize').value) / 100}px`; image.style.maxWidth = '100%'; image.style.height = 'auto'; };
+        image.addEventListener('load', resize, { once: true });
+        if (image.complete && image.naturalWidth) resize();
+    });
     if (window.katex) $('paperPreview').querySelectorAll('[data-latex]').forEach(token => {
         window.katex.render(token.dataset.latex,token,{throwOnError:false});
     });
@@ -290,6 +305,7 @@ async function openPaper(id) {
     const classId=list.classId || loaded[0]?.data.classId || '', subjectId=list.subjectId || loaded[0]?.data.subjectId || '';
     $('paperClass').value=classId;populateSubjects(subjectId);$('paperDate').value=list.date || '';$('paperIdentifier').value=list.identifier || '';
     $('defaultLayout').value=LAYOUTS.includes(list.defaultOptionsLayout)?list.defaultOptionsLayout:'2x2';
+    $('imageSize').value=Math.max(25,Math.min(200,Number(list.imageSize) || 100));$('imageSizeValue').value=`${$('imageSize').value}%`;
     $('textSize').value=Math.max(8,Math.min(20,list.textSize || 11));$('textSizeValue').value=`${$('textSize').value} pt`;$('paperColumns').value=Math.max(1,Math.min(4,list.columns || 1));
     items=loaded.map(item=>({...item,order:listOptionOrder(list, item.id),layout:LAYOUTS.includes(list.questionSettings?.[item.id]?.optionsLayout)?list.questionSettings[item.id].optionsLayout:''}));
     console.table(items.map(item => ({ questionId: item.id, savedOptionOrder: JSON.stringify(list.questionSettings?.[item.id]?.optionOrder ?? null), displayedOptionOrder: item.order.join(', '), orderSource: item.order.every((original, position) => original === position) ? 'original question' : 'list override' })));
@@ -331,27 +347,18 @@ document.addEventListener('selectionchange',()=>{ const range=window.getSelectio
 function restoreSelection() { if(!activeEditor?.isConnected || activeEditor.contentEditable!=='true') throw new Error('Focus an editable text area first.');activeEditor.focus();if(selection && activeEditor.contains(selection.commonAncestorContainer)) {const s=window.getSelection();s.removeAllRanges();s.addRange(selection);} }
 function insertHtml(html) {restoreSelection();document.execCommand('insertHTML',false,html);activeEditor.dispatchEvent(new Event('input',{bubbles:true}));}
 $('formatToolbar').addEventListener('mousedown',event=>{if(event.target.closest('button'))event.preventDefault();});
-$('formatToolbar').addEventListener('click',event=>attempt(()=>{
-    const command=event.target.closest('[data-format]')?.dataset.format;if(!command)return;
-    restoreSelection();
-    if(command==='bold'||command==='italic') { document.execCommand(command);activeEditor.dispatchEvent(new Event('input',{bubbles:true}));return; }
-    if(command==='code') {insertHtml(`<code>${esc(window.getSelection().toString() || 'code')}</code>`);return;}
-    insertion=command;
-    const descriptions={equation:['Insert equation','LaTeX formula','For example: x^2 + y^2 = z^2. The formula is kept as editable text.'],image:['Insert image','Image URL','Use an https image URL or a base64 image data URL.'],table:['Insert table','Rows × columns','For example: 3x2 (maximum 10x10).'],diagram:['Insert diagram','Mermaid source','For example: graph LR; A-->B']};
-    const [title,label,hint]=descriptions[command];$('insertTitle').textContent=title;$('insertLabel').firstChild.textContent=label;$('insertHint').textContent=hint;$('insertValue').value='';$('insertDialog').showModal();$('insertValue').focus();
-}));
-$('insertForm').addEventListener('submit',event=>{event.preventDefault();attempt(async()=>{
-    const value=$('insertValue').value.trim();if(!value)throw new Error('Enter content to insert.');
-    let html='';
-    if(insertion==='equation')html=`<span data-latex="${esc(value)}">${esc(value)}</span>`;
-    if(insertion==='image') {if(!/^(https:\/\/|data:image\/(png|jpeg|gif|webp);base64,)/i.test(value))throw new Error('Use an https image URL or image data URL.');html=`<img src="${esc(value)}" alt="Question illustration">`;}
-    if(insertion==='table') {const match=value.match(/^(\d+)\s*[x×]\s*(\d+)$/);if(!match || +match[1]<1 || +match[2]<1 || +match[1]>10 || +match[2]>10)throw new Error('Enter rows x columns between 1x1 and 10x10.');html='<table><tbody>'+Array.from({length:+match[1]},()=>'<tr>'+Array.from({length:+match[2]},()=>'<td>Text</td>').join('')+'</tr>').join('')+'</tbody></table><p><br></p>';}
-    if(insertion==='diagram') {if(!window.mermaid)throw new Error('Diagram renderer is still loading. Try again.');window.mermaid.initialize({startOnLoad:false,securityLevel:'strict'});const {svg}=await window.mermaid.render(`paper_${Date.now()}`,value);const image=await svgToPng(svg);html=`<img src="${image}" alt="${esc(value)}">`;}
-    $('insertDialog').close();insertHtml(html);
-});});
-async function svgToPng(svg) {const blob=new Blob([svg],{type:'image/svg+xml'}),url=URL.createObjectURL(blob);try {const image=new Image();image.src=url;await image.decode();const canvas=document.createElement('canvas');canvas.width=Math.min(1600,image.naturalWidth || 800);canvas.height=Math.max(1,Math.round((image.naturalHeight || 400)*canvas.width/(image.naturalWidth || 800)));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/png');}finally{URL.revokeObjectURL(url);}}
-$('cancelInsert').addEventListener('click',()=>$('insertDialog').close());
-document.addEventListener('paste',event=>{if(!event.target.matches('.editor[contenteditable="true"]'))return;event.preventDefault();insertHtml(clean(event.clipboardData.getData('text/html') || esc(event.clipboardData.getData('text/plain')).replaceAll('\n','<br>')));});
+$('formatToolbar').addEventListener('click', event => {
+    const command = event.target.closest('[data-format]')?.dataset.format;
+    if (!command) return;
+    if (['bold', 'italic', 'code'].includes(command)) paperAuthoring.command(command);
+    else paperAuthoring.open(command);
+});
+document.addEventListener('paste', event => {
+    const editor = event.target.closest?.('.editor[contenteditable="true"]');
+    if (!editor || event.defaultPrevented || !event.clipboardData) return;
+    event.preventDefault();
+    insertHtml(clean(event.clipboardData.getData('text/html') || esc(event.clipboardData.getData('text/plain')).replaceAll('\n','<br>')));
+});
 async function attempt(action) {try {await action();}catch(error){console.error(error);status(error.message || 'Unable to complete the action.',true);}}
 async function exclusive(action) {if(busy)return;busy=true;const controls=[...document.querySelectorAll('button,input,select,textarea,[contenteditable="true"]')];const previous=controls.map(el=>({el,disabled:el.disabled,editable:el.getAttribute('contenteditable')}));controls.forEach(el=>{if(el.hasAttribute('contenteditable'))el.contentEditable='false';else el.disabled=true;});try{await action();}catch(error){console.error(error);status(error.message || 'Unable to complete the action.',true);}finally{previous.forEach(({el,disabled,editable})=>{if(!el.isConnected)return;if(editable!==null)el.setAttribute('contenteditable',editable);else el.disabled=disabled;});busy=false;}}
 function download(blob,filename) {const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),30000);}
@@ -369,6 +376,7 @@ $('login').addEventListener('click',()=>attempt(()=>signInWithPopup(auth,new Goo
 $('paperClass').addEventListener('change',()=>{populateSubjects();updateName();markDirty();render();});$('paperSubject').addEventListener('change',()=>{updateName();markDirty();render();});
 for(const id of ['paperDate','paperIdentifier'])$(id).addEventListener('input',()=>{updateName();markDirty();});
 $('defaultLayout').addEventListener('change',()=>{markDirty();render();});$('textSize').addEventListener('input',()=>{$('textSizeValue').value=`${$('textSize').value} pt`;markDirty();refreshOutputs();});$('paperColumns').addEventListener('change',markDirty);
+$('imageSize').addEventListener('input',()=>{$('imageSizeValue').value=`${$('imageSize').value}%`;markDirty();refreshOutputs();});
 $('randomize').addEventListener('click',()=>{if(!canEditList())return;shuffle(items);markDirty();render();});
 $('openList').addEventListener('click',()=>exclusive(()=>openPaper($('savedLists').value)));
 $('newPaper').addEventListener('click',()=>{if(dirty&&!confirm('Discard unsaved changes and start a new paper?'))return;items=[];passages=new Map();skippedQuestionIds=[];sourceQuestionIds=[];listId=null;listOwner=null;dirty=false;$('paperIdentifier').value='';$('paperDate').value='';updateName();render();history.replaceState(null,'',location.pathname);status('New paper.');});
@@ -378,7 +386,7 @@ $('reuseQuestion').addEventListener('click',()=>exclusive(async()=>{const id=$('
 $('downloadCsv').addEventListener('click',()=>attempt(()=>exportCsv()));$('downloadKey').addEventListener('click',()=>attempt(()=>exportCsv(true)));
 $('downloadDocx').addEventListener('click',()=>exclusive(async()=>{validate();status('Building DOCX…');await downloadPaperDocx({title:$('paperName').value,items,passages,settings:settings(),clean,download,filename:fileName('.docx')});status('Question paper downloaded.');}));
 document.addEventListener('keydown',event=>{
-    if(busy)return;
+    if(busy || document.querySelector('#richAuthoringDialog[open]'))return;
     if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();exclusive(()=>savePaper(false));return;}
     if(event.altKey && !event.ctrlKey && !event.metaKey && !document.querySelector('dialog[open]')){
         if(event.key.toLowerCase()==='n'){event.preventDefault();attempt(()=>addQuestions(Number($('bulkCount').value)));}
