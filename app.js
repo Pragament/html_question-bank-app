@@ -3017,6 +3017,10 @@ function renderPrompt() {
     const topicRequirement = topics.length
         ? `- each row's topic field must be exactly one of: ${topics.map(topic => `"${topic}"`).join(', ')}.`
         : '- select at least one topic from the selected chapter before generating final CSV.';
+    const missingTaxonomy = [!className && 'class', !subject && 'subject', !chapter && 'chapter', !topics.length && 'topic'].filter(Boolean);
+    const taxonomyReadiness = missingTaxonomy.length
+        ? `- Missing required selections: ${missingTaxonomy.join(', ')}. Ask only for these missing labels before generating CSV. No taxonomy IDs or additional taxonomy fields are required.`
+        : '- Taxonomy selection is complete. The class, subject, chapter, and allowed topic labels above are all the required taxonomy values. Generate the CSV now; do not ask for additional taxonomy labels, IDs, or confirmation. The importer resolves IDs; leave sectionId blank unless an existing ID was explicitly supplied.';
     const difficultyRequirement = difficulty === 'Mixed'
         ? '- include a balanced spread of Easy, Medium, and Hard questions.\n- each row\'s difficulty field must be exactly one of Easy, Medium, or Hard. Do not use Mixed as a row difficulty.'
         : `- difficulty must be "${difficulty}".\n- each row's difficulty field must exactly match "${difficulty}".`;
@@ -3032,7 +3036,7 @@ ${subjectRequirement}
 ${chapterRequirement}
 ${topicRequirement}
 - Each row must use the selected class, subject, and chapter together, and exactly one of the selected topics. Do not add topics based on the question content or combine multiple topics in one cell.
-- If any class, subject, chapter, or topic selection is missing, ask for the missing selection and do not generate CSV or invent a replacement.
+${taxonomyReadiness}
 - Hindi translations belong only in the translation columns; keep class, subject, chapter, and topic labels exactly as selected.
 ${difficultyRequirement}
 ${typeRequirement}
@@ -3079,7 +3083,8 @@ ${classRequirement}
 ${subjectRequirement}
 ${chapterRequirement}
 ${topicRequirement}
-- Copy selected taxonomy labels exactly; do not invent labels or IDs. If selections are missing, ask for them before generating.
+- Copy selected taxonomy labels exactly; do not invent labels or IDs.
+${taxonomyReadiness}
 ${difficultyRequirement}
 ${typeRequirement}
 ${promptDetailRequirement(detail)}

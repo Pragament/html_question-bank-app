@@ -63,7 +63,19 @@ test('rendered prompts honor all four detail choices and preserve selected outpu
         lengths.push(prompt.length);
         assert.doesNotMatch(prompt, /Selected diagram format:|Do not include diagrams|chosen diagram format/);
         assert.match(prompt, /LaTeX/);
+        assert.match(prompt, /Taxonomy selection is complete/);
+        assert.match(prompt, /do not ask for additional taxonomy labels, IDs, or confirmation/);
+        assert.doesNotMatch(prompt, /If selections are missing|Missing required selections/);
         for(const expected of ['3 mcq','IX','Equations','Use mangoes.','PNG or JPEG'])assert.ok(prompt.includes(expected),`${level}: ${expected}`);
     }
     assert.ok(lengths.every((length,index)=>index===0 || length>lengths[index-1]));
+    context.selectedPromptLabels = () => [];
+    for (const level of ['simplest','simple','intermediate','detailed']) {
+        fields.promptDetail.value = level;
+        context.renderPrompt();
+        const prompt = context.els.aiPromptText.textContent;
+        assert.match(prompt, /Missing required selections: topic\./);
+        assert.match(prompt, /Ask only for these missing labels/);
+        assert.doesNotMatch(prompt, /Taxonomy selection is complete/);
+    }
 });
