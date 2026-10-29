@@ -100,9 +100,9 @@ test('each prompt diagram choice requests only the selected representation',()=>
  assert.ok(context.promptDiagramRequirement('base64').includes('never invent base64'));
 });
 
-test('diagram format defaults to none without disabling LaTeX',()=>{
+test('none or missing diagram format adds no prompt instructions',()=>{
  vm.runInContext(source.slice(source.indexOf('function promptDiagramRequirement('),source.indexOf('function selectedPromptLabel(')),context);
  for(const value of ['none',undefined,'']){
-  const prompt=context.promptDiagramRequirement(value);assert.ok(prompt.includes('Selected diagram format: None'));assert.ok(prompt.includes('Do not include diagrams'));assert.ok(prompt.includes('LaTeX formulas are still allowed'));
+  assert.equal(context.promptDiagramRequirement(value),'');
  }
 });

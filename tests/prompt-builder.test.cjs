@@ -61,7 +61,9 @@ test('rendered prompts honor all four detail choices and preserve selected outpu
         context.renderPrompt();
         const prompt=context.els.aiPromptText.textContent;
         lengths.push(prompt.length);
-        for(const expected of ['3 mcq','IX','Equations','Use mangoes.','PNG or JPEG','Selected diagram format: None'])assert.ok(prompt.includes(expected),`${level}: ${expected}`);
+        assert.doesNotMatch(prompt, /Selected diagram format:|Do not include diagrams|chosen diagram format/);
+        assert.match(prompt, /LaTeX/);
+        for(const expected of ['3 mcq','IX','Equations','Use mangoes.','PNG or JPEG'])assert.ok(prompt.includes(expected),`${level}: ${expected}`);
     }
     assert.ok(lengths.every((length,index)=>index===0 || length>lengths[index-1]));
 });
