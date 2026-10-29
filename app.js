@@ -3073,7 +3073,7 @@ Custom requirements:
 ${customRequirements}
 
 Apply these custom requirements while preserving the selected taxonomy, CSV format, and metadata rules above.` : ''}`;
-    const detail = $('promptDetail')?.value || 'detailed';
+    const detail = $('promptDetail')?.value || 'simple';
     if (['simplest', 'simple', 'intermediate'].includes(detail)) {
         els.aiPromptText.textContent = `Create import-ready CSV questions for students in India.
 Headers (exact order):
